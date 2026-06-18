@@ -1,0 +1,58 @@
+# Dependencies and local runtimes
+node_modules/
+.venv/
+venv/
+env/
+
+# Generated TransComparator outputs
+out/
+
+# Local agent, index, and editor state
+.codegraph/
+.agents/
+.codex/
+.vscode/
+.idea/
+
+# Local one-off diagnostics with machine-specific sample paths
+scripts/compare-epub-text.js
+
+# Source texts and heavy input files
+*.txt
+!requirements.txt
+*.epub
+*.mobi
+*.azw3
+*.fb2
+*.pdf
+*.docx
+*.odt
+*.rtf
+*.csv
+*.tsv
+
+# Model and Python caches
+.cache/
+.huggingface/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Installer scratch files
+scoop-install.ps1
+
+# Logs and OS noise
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+/.cursor
