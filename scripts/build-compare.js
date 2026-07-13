@@ -1527,6 +1527,28 @@ function makeHtml(rows, selection, projectContext) {
       color: #344054;
       font-size: 14px;
     }
+    .diff-title {
+      margin-bottom: 8px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .diff-comparison + .diff-comparison {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid var(--line);
+    }
+    .diff-match-badge {
+      flex: 0 0 auto;
+      padding: 2px 5px;
+      border: 1px solid color-mix(in srgb, var(--focus) 24%, var(--line));
+      border-radius: 999px;
+      background: var(--info);
+      color: var(--focus);
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 700;
+    }
     ins {
       background: #dff5e5;
       color: #14532d;
@@ -2437,9 +2459,42 @@ function makeHtml(rows, selection, projectContext) {
       if (!row.cn || !row.twCn) return "";
       const key = diffCacheKey(row);
       if (diffHtmlCache.has(key)) return diffHtmlCache.get(key);
-      const html = inlineDiffHtml(row.twCn, row.cn);
+      const html = inlineDiffHtml(row.cn, row.twCn);
       diffHtmlCache.set(key, html);
       return html;
+    }
+
+    function renderDiffBlock(row, noteText) {
+      const twDiffHtml = renderRowDiffHtml(row);
+      const revision = parseAiNote(noteText)?.revision || "";
+      const revisionDiffHtml = row.cn && revision ? inlineDiffHtml(row.cn, revision) : "";
+      const revisionMatchesTw = Boolean(twDiffHtml && revisionDiffHtml && twDiffHtml === revisionDiffHtml);
+      const comparisons = [];
+      if (twDiffHtml && !revisionMatchesTw) {
+        comparisons.push(
+          '<div class="diff-comparison">' +
+          '<div class="version-label"><span>' + escapeHtml(pageLabels.cn) + ' -> ' + escapeHtml(pageLabels.tw) + '简体化</span></div>' +
+          '<div lang="zh-Hans">' + twDiffHtml + '</div>' +
+          '</div>'
+        );
+      }
+      if (revisionDiffHtml) {
+        const matchBadge = revisionMatchesTw
+          ? '<span class="diff-match-badge" title="与' + escapeHtml(pageLabels.tw) + '简体化的差异完全相同">同' + escapeHtml(pageLabels.tw) + '简体化</span>'
+          : "";
+        comparisons.push(
+          '<div class="diff-comparison">' +
+          '<div class="version-label"><span>' + escapeHtml(pageLabels.cn) + ' -> 修改结果</span>' + matchBadge + '</div>' +
+          '<div lang="zh-Hans">' + revisionDiffHtml + '</div>' +
+          '</div>'
+        );
+      }
+      return comparisons.length
+        ? '<section class="diff-block" data-diff>' +
+          '<div class="diff-title">差异辅助</div>' +
+          comparisons.join("") +
+          '</section>'
+        : "";
     }
 
     function inlineDiffHtml(oldText, newText) {
@@ -2606,15 +2661,7 @@ function makeHtml(rows, selection, projectContext) {
         .join(" ");
       const cnCopyButton = '<button type="button" class="copy-version" data-copy-text="' + escapeHtml(row.cn || "") + '" title="复制' + escapeHtml(pageLabels.cn) + '">复制</button>';
       const twCopyButton = '<button type="button" class="copy-version" data-copy-text="' + escapeHtml(row.tw || "") + '" title="复制' + escapeHtml(pageLabels.tw) + '">复制</button>';
-      const diffHtml = renderRowDiffHtml(row);
-      const diffBlock = diffHtml
-        ? [
-          '<section class="diff-block" data-diff>',
-          '<div class="version-label"><span>差异辅助：' + escapeHtml(pageLabels.tw) + '简体化 -> ' + escapeHtml(pageLabels.cn) + '</span></div>',
-          '<div lang="zh-Hans">' + diffHtml + '</div>',
-          '</section>',
-        ].join("")
-        : "";
+      const diffBlock = renderDiffBlock(row, note.note || "");
       const semanticLine = row.jpAlignScoreText
         ? '<div><dt>' + escapeHtml(pageMeta.semanticLabel) + ' 语义</dt><dd>' + escapeHtml(row.jpAlignScoreText) + '</dd></div>'
         : "";
@@ -2636,7 +2683,7 @@ function makeHtml(rows, selection, projectContext) {
         '<section class="version-panel"><div class="version-label"><span>' + escapeHtml(pageLabels.cn) + '</span>' + cnCopyButton + '</div><div lang="zh-Hans">' + escapeHtml(row.cn) + '</div></section>',
         '<section class="version-panel"><div class="version-label"><span>' + escapeHtml(pageLabels.tw) + '</span>' + twCopyButton + '</div><div lang="zh-Hant">' + escapeHtml(row.tw) + '</div></section>',
         '</div>',
-        diffBlock,
+        '<div data-diff-slot="' + id + '">' + diffBlock + '</div>',
         '</td>',
         '<td class="note-cell">',
         '<div class="confirm-row">',
@@ -2781,6 +2828,9 @@ function makeHtml(rows, selection, projectContext) {
         aiBadge.className = "ai-confirm-badge " + state.cls;
         aiBadge.textContent = state.text;
       }
+      const diffSlot = tbody.querySelector('[data-diff-slot="' + CSS.escape(id) + '"]');
+      const row = rowsById.get(id);
+      if (diffSlot && row) diffSlot.innerHTML = renderDiffBlock(row, notes[id]?.note || "");
       saveNotes();
       updateDoneCount();
     }

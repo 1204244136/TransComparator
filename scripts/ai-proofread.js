@@ -520,7 +520,7 @@ async function proofreadRow(row, allRows, config, labels) {
   const counterpartLabel = counterpartKey === "cn" ? (labels.cn || "非原文 A") : (labels.tw || "非原文 B");
   const targetText = targetKey === "cn" ? row.cn : row.tw;
   const counterpartText = counterpartKey === "cn" ? row.cn : row.tw;
-  const diffHelper = diffSummary(row.twCn || row.tw || "", row.cn || "", labels);
+  const diffHelper = diffSummary(row.cn || "", row.twCn || row.tw || "", labels);
   const basePayload = {
     row,
     targetLabel,
@@ -714,10 +714,10 @@ function diffSummary(fromText, toText, labels) {
     if (part.added) changes.push(`+ ${value}`);
     if (changes.length >= 24) break;
   }
-  const left = labels.tw || "非原文 B";
-  const right = labels.cn || "非原文 A";
+  const left = labels.cn || "非原文 A";
+  const right = labels.tw || "非原文 B";
   return changes.length
-    ? `${left}简体化 -> ${right}\n${changes.join("\n")}`
+    ? `${left} -> ${right}简体化\n${changes.join("\n")}`
     : "差异辅助未发现明显词级差异。";
 }
 
