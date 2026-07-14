@@ -1868,6 +1868,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           <div class="action-buttons">
             <button id="acceptAiSame" class="accept-ai-same" type="button">确认自动不改</button>
             <button id="exportNotes" type="button">导出修改结果</button>
+            <button id="confirmRevisions" type="button">确认修改结果</button>
             <button id="clearAiLog" class="ai-log-clear" type="button">清AI记录</button>
             <button id="clearFilter" class="filter-clear" type="button">清筛选</button>
           </div>
@@ -3154,6 +3155,16 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       return entries;
     }
 
+    function markRevisionEntriesDone(entries) {
+      for (const entry of entries) {
+        const current = notes[entry.id] || { note: "", manualNote: "", done: false, manualDone: false, aiDone: false };
+        current.manualDone = true;
+        current.done = true;
+        notes[entry.id] = current;
+      }
+      saveNotes();
+    }
+
     function shortTimestamp(date = new Date()) {
       const pad = (value) => String(value).padStart(2, "0");
       return pad(date.getMonth() + 1) + pad(date.getDate()) + "-" + pad(date.getHours()) + pad(date.getMinutes());
@@ -3216,24 +3227,20 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       a.download = "修改" + entries.length + "处-" + shortTimestamp() + ".pga";
       a.click();
       URL.revokeObjectURL(url);
-      const markDone = confirm("是否人工确认导出内容？");
-      if (markDone) {
-        for (const entry of entries) {
-          const current = notes[entry.id] || { note: "", manualNote: "", done: false, manualDone: false, aiDone: false };
-          current.manualDone = true;
-          current.done = true;
-          notes[entry.id] = current;
-        }
-        saveNotes();
+      setTemporaryStatus("已导出 " + entries.length + " 处修改结果；勾选状态已保留，可继续确认。", 5000);
+    });
+
+    document.getElementById("confirmRevisions").addEventListener("click", () => {
+      const entries = selectedRevisionEntries();
+      if (!entries.length) {
+        setTemporaryStatus("请先勾选要确认的修改结果。", 5000);
+        return;
       }
+      if (!confirm("将当前勾选的 " + entries.length + " 处修改结果标记为人工确认？")) return;
+      markRevisionEntriesDone(entries);
       selectedRevisionIds.clear();
-      if (markDone) {
-        applyFilters({ reset: false });
-        setTemporaryStatus("已导出 " + entries.length + " 处修改结果，并标记为人工确认。", 5000);
-      } else {
-        renderVisibleRows({ reset: false });
-        setTemporaryStatus("已导出 " + entries.length + " 处修改结果，并清空勾选状态。", 5000);
-      }
+      applyFilters({ reset: false });
+      setTemporaryStatus("已将 " + entries.length + " 处修改结果标记为人工确认。", 5000);
     });
 
     function aiConfig() {
