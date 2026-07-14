@@ -109,6 +109,7 @@ Pandoc 会忠实输出完整 linear text；过滤职责属于 TransComparator。
 - commit 信息应使用中文并遵守 Conventional Commits 风格。
 - 不要使用破坏性 git 命令，除非用户明确要求。
 - 如果工作树已有用户或其他 agent 的改动，必须保留并与之协作。
+- 修改后不要进行浏览器截图验证，因为本地 Playwright 运行时缺少 `playwright-core`。
 
 ## 验证清单
 
