@@ -25,5 +25,15 @@ start "" "%URL%"
 
 set "TRANSCOMPARATOR_SETUP_PORT=%PORT%"
 call "%NPM_CMD%" run setup
+set "EXIT_CODE=%ERRORLEVEL%"
 
-endlocal
+echo.
+if not "%EXIT_CODE%"=="0" (
+  echo TransComparator setup server exited with code %EXIT_CODE%.
+) else (
+  echo TransComparator setup server stopped.
+)
+echo Review the output above, then press any key to close this window.
+pause >nul
+
+endlocal & exit /b %EXIT_CODE%
