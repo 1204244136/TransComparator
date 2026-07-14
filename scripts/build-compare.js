@@ -1832,7 +1832,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           <div class="stat ok"><strong>${stats.ok}</strong>接近</div>
           <div class="stat-divider" aria-hidden="true"></div>
           <div class="stat"><strong id="doneCount">0</strong>人工确认</div>
-          <div class="stat"><strong id="aiDoneCount">0</strong>AI结果</div>
+          <div class="stat"><strong id="aiDoneCount">0</strong>自动结果</div>
         </div>
       </div>
       <div class="toolbar">
@@ -1848,8 +1848,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             </div>
           </div>
           <div class="filter-group">
-            <span class="filter-group-label">AI</span>
-            <div class="segmented" role="group" aria-label="AI 分析结果">
+            <span class="filter-group-label">自动</span>
+            <div class="segmented" role="group" aria-label="自动分析结果">
               <button type="button" class="is-active" data-ai-result="all">全部</button>
               <button type="button" data-ai-result="modify">需改</button>
               <button type="button" data-ai-result="same">不改</button>
@@ -1866,7 +1866,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             <label><input id="showRevisionDiff" type="checkbox" checked>修改差异</label>
           </div>
           <div class="action-buttons">
-            <button id="acceptAiSame" class="accept-ai-same" type="button">确认AI不改</button>
+            <button id="acceptAiSame" class="accept-ai-same" type="button">确认自动不改</button>
             <button id="exportNotes" type="button">导出修改结果</button>
             <button id="clearAiLog" class="ai-log-clear" type="button">清AI记录</button>
             <button id="clearFilter" class="filter-clear" type="button">清筛选</button>
@@ -1915,8 +1915,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
                 <input id="aiConcurrency" type="number" min="1" max="12" value="3">
               </div>
               <div class="ai-field">
-                <label for="aiSimilarity">预筛选</label>
-                <input id="aiSimilarity" type="text" inputmode="decimal" value="92%" aria-label="预筛选百分比">
+                <label for="aiSimilarity">${escapeHtml(labels.cn)}-${escapeHtml(labels.tw)}相似度预筛选</label>
+                <input id="aiSimilarity" type="text" inputmode="decimal" value="92%" aria-label="${escapeHtml(labels.cn)}-${escapeHtml(labels.tw)}相似度预筛选百分比">
               </div>
               <div class="ai-controls">
                 <div class="toggle-row ai-options">
@@ -2002,6 +2002,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const pgaTemplate = ${pgaTemplateJson};
     const pageLabels = pageMeta.pageLabels;
     const aiConfigStorageKey = "translation-compare-ai-config-v1";
+    const automatedNoteMarkers = ["[AI校对]", "[规则预筛]", "[相似度预筛]"];
     const allRows = JSON.parse(document.getElementById("rowData").textContent);
     const rowsById = new Map(allRows.map((row) => [String(row.index), row]));
     const currentRawNotes = readStoredNotes(storageKey);
@@ -2096,7 +2097,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             item.aiDone = false;
             item.manualDone = false;
           } else {
-            item.aiDone = Boolean(item.aiDone || hasAiDecisionNote(item.note));
+            item.aiDone = Boolean(item.aiDone || hasAutomatedDecisionNote(item.note));
           }
           item.done = Boolean(item.manualDone);
         }
@@ -2124,12 +2125,17 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.similarity.value = formatPercentRatio(aiIds.similarity.value);
     }
 
-    function isAiNoteText(value) {
-      return String(value || "").trimStart().startsWith("[AI校对]");
+    function automatedNoteMarker(value) {
+      const text = String(value || "").trimStart();
+      return automatedNoteMarkers.find((marker) => text.startsWith(marker)) || "";
     }
 
-    function hasAiDecisionNote(note) {
-      return !isAiFailureNote(note) && Boolean(parseAiNote(note));
+    function isAutomatedNoteText(value) {
+      return Boolean(automatedNoteMarker(value));
+    }
+
+    function hasAutomatedDecisionNote(note) {
+      return !isAiFailureNote(note) && Boolean(parseAutomatedNote(note));
     }
 
     function isAiFailureNote(note) {
@@ -2156,7 +2162,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const manualNote = String(value?.manualNote || "");
       const manualDone = Boolean(value?.manualDone);
       const item = splitStoredNote(note, manualNote, false, manualDone);
-      item.aiDone = Boolean(value?.aiDone || hasAiDecisionNote(item.note));
+      item.aiDone = Boolean(value?.aiDone || hasAutomatedDecisionNote(item.note));
       cleanAiFailureState(item);
       return item;
     }
@@ -2164,8 +2170,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     function splitStoredNote(note, manualNote, done, manualDone = false, aiDone = false) {
       const text = String(note || "");
       const manual = String(manualNote || "").trim();
-      if (isAiNoteText(text)) return { note: text, manualNote: manual, done, manualDone, aiDone };
-      const markerIndex = text.indexOf("[AI校对]");
+      if (isAutomatedNoteText(text)) return { note: text, manualNote: manual, done, manualDone, aiDone };
+      const markerIndexes = automatedNoteMarkers.map((marker) => text.indexOf(marker)).filter((index) => index >= 0);
+      const markerIndex = markerIndexes.length ? Math.min(...markerIndexes) : -1;
       if (markerIndex < 0) return { note: text, manualNote: manual, done, manualDone, aiDone };
       return {
         note: text.slice(markerIndex).trim(),
@@ -2182,7 +2189,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
 
     function visibleManualNote(item) {
       if (!item) return "";
-      return isAiNoteText(item.note) ? item.manualNote || "" : item.note || "";
+      return isAutomatedNoteText(item.note) ? item.manualNote || "" : item.note || "";
     }
 
     function combinedNoteText(item) {
@@ -2196,7 +2203,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     }
 
     function setManualNote(item, value) {
-      if (isAiNoteText(item.note)) {
+      if (isAutomatedNoteText(item.note)) {
         item.manualNote = value;
       } else {
         item.note = value;
@@ -2504,7 +2511,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
 
     function renderDiffBlock(row, noteText) {
       const twDiffHtml = renderRowDiffHtml(row);
-      const revision = parseAiNote(noteText)?.revision || "";
+      const revision = parseAutomatedNote(noteText)?.revision || "";
       const revisionDiffHtml = row.cn && revision ? inlineDiffHtml(row.cn, revision) : "";
       const revisionMatchesTw = Boolean(twDiffHtml && revisionDiffHtml && twDiffHtml === revisionDiffHtml);
       const comparisons = [];
@@ -2616,9 +2623,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }).join("");
     }
 
-    function parseAiNote(note) {
+    function parseAutomatedNote(note) {
       const lines = String(note || "").split(/\\n+/).map((line) => line.trim()).filter(Boolean);
-      if (!lines[0]?.startsWith("[AI校对]")) return null;
+      if (!automatedNoteMarker(lines[0])) return null;
       if (isAiFailureNote(note)) return null;
       const data = { semantic: "", modify: "", revision: "", analysis: "" };
       let currentField = "";
@@ -2652,7 +2659,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     }
 
     function renderNoteSummary(noteText) {
-      const note = parseAiNote(noteText);
+      const note = parseAutomatedNote(noteText);
       if (!note) return '<div class="note-summary" hidden></div>';
       const analysis = note.analysis
         ? '<div class="note-detail note-reason"><div class="note-detail-head"><span class="note-summary-key">分析</span></div><div class="note-summary-value">' + escapeHtml(note.analysis) + '</div></div>'
@@ -2670,8 +2677,15 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
 
     function aiBadgeState(item) {
       if (isAiFailureNote(item?.note)) return { cls: "is-failure", text: "AI失败" };
-      const note = parseAiNote(item?.note || "");
+      const marker = automatedNoteMarker(item?.note || "");
+      const note = parseAutomatedNote(item?.note || "");
       if (!note) return { cls: "is-off", text: "AI未跑" };
+      if (marker === "[规则预筛]") {
+        return note.modify === "待人工确认"
+          ? { cls: "is-unclear", text: "规则冲突" }
+          : { cls: "is-same", text: "规则通过" };
+      }
+      if (marker === "[相似度预筛]") return { cls: "is-same", text: "相似跳过" };
       if (note.modify === "是") return { cls: "is-modify", text: "AI需改" };
       if (note.modify === "否") return { cls: "is-same", text: "AI不改" };
       return { cls: "is-unclear", text: "AI待判" };
@@ -2785,7 +2799,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       let aiDone = 0;
       for (const item of Object.values(notes)) {
         if (item?.manualDone) done += 1;
-        if (item?.aiDone || hasAiDecisionNote(item?.note)) aiDone += 1;
+        if (item?.aiDone || hasAutomatedDecisionNote(item?.note)) aiDone += 1;
       }
       doneCount.textContent = String(done);
       aiDoneCount.textContent = String(aiDone);
@@ -2837,11 +2851,11 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
 
     function writeNote(id, note, aiDone) {
       const current = notes[id] || { note: "", done: false };
-      current.aiDone = Boolean(aiDone || current.aiDone || hasAiDecisionNote(note));
+      current.aiDone = Boolean(aiDone || current.aiDone || hasAutomatedDecisionNote(note));
       current.done = Boolean(current.manualDone);
-      if (!current.note || isAiNoteText(current.note)) {
+      if (!current.note || isAutomatedNoteText(current.note)) {
         current.note = note || current.note;
-      } else if (isAiNoteText(note)) {
+      } else if (isAutomatedNoteText(note)) {
         current.manualNote = [current.manualNote, current.note].filter(Boolean).join("\\n\\n");
         current.note = note;
       } else if (note && !current.note.includes(note)) {
@@ -2897,7 +2911,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     }
 
     function aiResultState(row) {
-      const note = parseAiNote(notes[String(row.index)]?.note || "");
+      const note = parseAutomatedNote(notes[String(row.index)]?.note || "");
       if (!note) return "none";
       if (note.modify === "是") return "modify";
       if (note.modify === "否") return "same";
@@ -3133,7 +3147,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       for (const row of allRows) {
         const id = String(row.index);
         if (!selectedRevisionIds.has(id)) continue;
-        const revision = parseAiNote(notes[id]?.note || "")?.revision || "";
+        const revision = parseAutomatedNote(notes[id]?.note || "")?.revision || "";
         if (!row.cn || !revision) continue;
         entries.push({ id, searchText: row.cn, replaceText: revision });
       }
@@ -3165,10 +3179,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     document.getElementById("acceptAiSame").addEventListener("click", () => {
       const rows = currentAiSameRows();
       if (!rows.length) {
-        setTemporaryStatus("当前筛选结果中没有待确认的 AI不改 行。", 5000);
+        setTemporaryStatus("当前筛选结果中没有待确认的自动不改行。", 5000);
         return;
       }
-      if (!confirm("将当前筛选结果中的 " + rows.length + " 条 AI不改 行标记为人工确认？")) return;
+      if (!confirm("将当前筛选结果中的 " + rows.length + " 条自动不改行标记为人工确认？")) return;
       for (const row of rows) {
         const id = String(row.index);
         const current = notes[id] || { note: "", manualNote: "", done: false, manualDone: false, aiDone: false };
@@ -3178,7 +3192,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
       saveNotes();
       updateDoneCount();
-      setTemporaryStatus("已将 " + rows.length + " 条 AI不改 行标记为人工确认。", 7000);
+      setTemporaryStatus("已将 " + rows.length + " 条自动不改行标记为人工确认。", 7000);
       applyFilters({ reset: false });
     });
 
@@ -3405,11 +3419,14 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const rowTotal = Math.max(0, ai.total || 0);
       const skippedDone = Math.min(rowTotal || Infinity, Math.max(0, ai.skippedDone || 0));
       const prefiltered = Math.min(rowTotal || Infinity, Math.max(0, ai.prefiltered || 0));
+      const rulePrefiltered = Math.min(rowTotal || Infinity, Math.max(0, ai.rulePrefiltered || 0));
+      const similarityPrefiltered = Math.min(rowTotal || Infinity, Math.max(0, ai.similarityPrefiltered || 0));
+      const structuredConflicts = Math.min(rowTotal || Infinity, Math.max(0, ai.structuredConflicts || 0));
       aiIds.progress.style.width = Math.min(100, Math.round((done / total) * 100)) + "%";
       aiIds.progressWrap.hidden = !ai.running && done === 0 && !prefiltered;
       const queueText = done + "/" + aiTotal;
       const skipText = "人工确认跳过 " + skippedDone;
-      const prefilterText = "预筛选跳过 " + prefiltered;
+      const prefilterText = "规则跳过 " + rulePrefiltered + "，结构化冲突 " + structuredConflicts + "，相似度跳过 " + similarityPrefiltered;
       if (!isStatusMessageLocked()) {
         if (ai.running) {
           setRuntimeStatus("AI 校对中：实际调用 " + queueText + "，" + skipText + "，" + prefilterText + "，建议 " + (ai.suggested || 0) + "，错误 " + (ai.errors || 0));
@@ -3440,10 +3457,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           writeNote(String(result.index), result.note || "", Boolean(result.done));
         }
         if (skippedStaleResults && !isStatusMessageLocked()) {
-          setRuntimeStatus("已跳过 " + skippedStaleResults + " 条与当前工作台行内容不匹配的 AI 结果。");
+          setRuntimeStatus("已跳过 " + skippedStaleResults + " 条与当前工作台行内容不匹配的自动结果。");
         }
       } else if ((ai.results || []).length && !ai.running && !isStatusMessageLocked()) {
-        setRuntimeStatus("已忽略非当前项目快照的 AI 结果；当前项目备注保持独立。");
+        setRuntimeStatus("已忽略非当前项目快照的自动结果；当前项目备注保持独立。");
       }
       if (appliedResult && (query.value.trim() || notesOnly || doneMode !== "all")) {
         applyFilters({ reset: false });

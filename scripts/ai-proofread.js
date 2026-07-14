@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { diffWordsWithSpace } = require("diff");
 const OpenCC = require("opencc-js");
+const { classifyPrefilter } = require("./ai-prefilter");
 const { rowSignature, sameProjectSnapshot } = require("./project-context");
 
 const rootDir = path.join(__dirname, "..");
@@ -85,6 +86,9 @@ const status = {
   processed: 0,
   handled: 0,
   prefiltered: 0,
+  rulePrefiltered: 0,
+  similarityPrefiltered: 0,
+  structuredConflicts: 0,
   skippedDone: 0,
   modelProcessed: 0,
   modelHandled: 0,
@@ -129,6 +133,9 @@ function clientStatus() {
     processed: status.processed,
     handled: status.handled,
     prefiltered: status.prefiltered,
+    rulePrefiltered: status.rulePrefiltered,
+    similarityPrefiltered: status.similarityPrefiltered,
+    structuredConflicts: status.structuredConflicts,
     skippedDone: status.skippedDone,
     modelProcessed: status.modelProcessed,
     modelHandled: status.modelHandled,
@@ -151,35 +158,6 @@ function withElapsed(requests) {
     ...request,
     elapsedMs: Math.max(0, now - Date.parse(request.startedAt || new Date())),
   }));
-}
-
-function normalizeZh(text) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/[「」『』“”‘’（）()【】《》〈〉—\-─…、，。！？：；,.!?;:\s0-9a-z]/g, "");
-}
-
-function bigrams(text) {
-  const chars = Array.from(normalizeZh(text));
-  if (chars.length < 2) return new Set(chars);
-  const grams = new Set();
-  for (let index = 0; index < chars.length - 1; index += 1) {
-    grams.add(chars[index] + chars[index + 1]);
-  }
-  return grams;
-}
-
-function textSimilarity(a, b) {
-  const aSet = bigrams(a);
-  const bSet = bigrams(b);
-  if (!aSet.size && !bSet.size) return 1;
-  if (!aSet.size || !bSet.size) return 0;
-
-  let intersection = 0;
-  for (const gram of aSet) {
-    if (bSet.has(gram)) intersection += 1;
-  }
-  return intersection / (aSet.size + bSet.size - intersection);
 }
 
 function readRows() {
@@ -265,6 +243,9 @@ function resetStatus(config, rowsLength) {
   status.processed = 0;
   status.handled = 0;
   status.prefiltered = 0;
+  status.rulePrefiltered = 0;
+  status.similarityPrefiltered = 0;
+  status.structuredConflicts = 0;
   status.skippedDone = 0;
   status.modelProcessed = 0;
   status.modelHandled = 0;
@@ -279,31 +260,40 @@ function resetStatus(config, rowsLength) {
   controllers = new Set();
 }
 
-function makePrefilterResult(row, config, labels, similarity) {
+function makePrefilterResult(row, labels, classification) {
   const sourceLabel = labels.jp || "原文";
   const leftLabel = labels.cn || "非原文 A";
   const rightLabel = labels.tw || "非原文 B";
+  const isConflict = classification.kind === "structured-conflict";
+  const isSimilarity = classification.kind === "similarity";
+  const marker = isSimilarity ? "[相似度预筛]" : "[规则预筛]";
+  const analysis = isSimilarity
+    ? `${leftLabel} 与 ${rightLabel} 的受保护正文相似度为 ${Math.round(classification.similarity * 100)}%。`
+    : classification.reason;
   return {
     runId: status.runId,
     index: row.index,
     signature: rowSignature(row),
-    status: "similar",
-    done: true,
+    status: isConflict ? "rule-conflict" : (isSimilarity ? "similarity-prefilter" : "rule-prefilter"),
+    done: !isConflict,
     note: [
-      "[AI校对]",
-      "语义是否相同：相同",
-      "是否需要修改：否",
-      `分析过程：预筛选判断 ${leftLabel} 与 ${rightLabel} 极度相似（${Math.round(similarity * 100)}%）。${row.jp ? `参照列：${sourceLabel}。` : ""}`,
+      marker,
+      `语义是否相同：${isConflict ? "待人工确认" : "相同"}`,
+      `是否需要修改：${isConflict ? "待人工确认" : "否"}`,
+      `分析：${analysis}${row.jp ? ` 参照列：${sourceLabel}。` : ""}`,
     ].filter(Boolean).join("\n"),
   };
 }
 
-function addResult(result, { prefiltered = false } = {}) {
+function addResult(result, { prefilterKind = "" } = {}) {
   status.results.set(result.index, result);
   status.processed += 1;
   if (result.done) status.handled += 1;
-  if (prefiltered) {
+  if (prefilterKind) {
     status.prefiltered += 1;
+    if (prefilterKind === "rule") status.rulePrefiltered += 1;
+    if (prefilterKind === "similarity") status.similarityPrefiltered += 1;
+    if (prefilterKind === "structured-conflict") status.structuredConflicts += 1;
   } else {
     status.modelProcessed += 1;
     if (result.done) status.modelHandled += 1;
@@ -340,17 +330,25 @@ async function startProofread(input) {
       continue;
     }
     const left = row.cn || "";
-    const right = row.twCn || row.tw || "";
-    const similarity = Math.max(Number(row.score) || 0, textSimilarity(left, right));
-    if (similarity >= config.similarityThreshold) {
-      addResult(makePrefilterResult(row, config, labels, similarity), { prefiltered: true });
+    const right = row.twCn || toCn(row.tw || "");
+    const classification = classifyPrefilter({
+      source: row.jp || "",
+      left,
+      right,
+      score: row.score,
+    }, config.similarityThreshold);
+    if (classification) {
+      const prefilterKind = classification.kind === "similarity"
+        ? "similarity"
+        : (classification.kind === "structured-conflict" ? "structured-conflict" : "rule");
+      addResult(makePrefilterResult(row, labels, classification), { prefilterKind });
       continue;
     }
     queue.push(row);
   }
 
   status.queued = queue.length;
-  pushLog(`人工确认跳过 ${status.skippedDone} 行，预筛选跳过 ${status.prefiltered} 行，剩余 ${queue.length} 行进入 AI 校对。`);
+  pushLog(`人工确认跳过 ${status.skippedDone} 行，规则跳过 ${status.rulePrefiltered} 行，结构化冲突 ${status.structuredConflicts} 行，相似度跳过 ${status.similarityPrefiltered} 行，剩余 ${queue.length} 行进入 AI 校对。`);
   runQueue(queue, rows, config, labels).catch((error) => {
     status.error = error.message || String(error);
     pushLog(status.error);
@@ -456,6 +454,9 @@ function clearProofreadCache() {
   status.processed = 0;
   status.handled = 0;
   status.prefiltered = 0;
+  status.rulePrefiltered = 0;
+  status.similarityPrefiltered = 0;
+  status.structuredConflicts = 0;
   status.skippedDone = 0;
   status.modelProcessed = 0;
   status.modelHandled = 0;
