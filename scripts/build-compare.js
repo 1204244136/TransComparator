@@ -5,6 +5,29 @@ const { resolveInputSelection } = require("./input-selection");
 const { providerDefaults, proofreadPrompt } = require("./ai-proofread");
 const { createProjectContext, rowSignature } = require("./project-context");
 
+const fallbackPgaTemplate = `<?xml version="1.0" encoding="UTF-8"?>
+<pgr:powergrep xmlns:pgr="http://www.powergrep.com/powergrep52.xsd" version="5.2">
+\t<actionfile>
+\t\t<action actiontype="replace" searchtype="regex list" concurrent="1" targettype="same" backuptype="none">
+\t\t\t<searchtext></searchtext>
+\t\t\t<replacetext></replacetext>
+\t\t\t<sectioning sectiontype="whole file"/>
+\t\t\t<context contexttype="line" numbering="1" extra="context"/>
+\t\t</action>
+\t</actionfile>
+</pgr:powergrep>
+`;
+
+function loadPgaTemplate() {
+  const configuredPath = process.env.TRANS_COMPARATOR_PGA_TEMPLATE;
+  const homeDir = process.env.USERPROFILE || process.env.HOME || "";
+  const templatePath = configuredPath
+    ? path.resolve(configuredPath)
+    : path.join(homeDir, "Desktop", "替换.pga");
+  if (!templatePath || !fs.existsSync(templatePath)) return fallbackPgaTemplate;
+  return fs.readFileSync(templatePath, "utf8").replace(/^\uFEFF/, "");
+}
+
 function normalizeZh(text) {
   return toCn(text)
     .toLowerCase()
@@ -601,7 +624,7 @@ function rowClass(score) {
   return "review";
 }
 
-function makeHtml(rows, selection, projectContext) {
+function makeHtml(rows, selection, projectContext, pgaTemplate) {
   const generatedAt = new Date(projectContext.generatedAt).toLocaleString("zh-CN", { hour12: false });
   const labels = {
     jp: "日文",
@@ -655,6 +678,7 @@ function makeHtml(rows, selection, projectContext) {
     };
   });
   const rowsJson = JSON.stringify(clientRows).replace(/</g, "\\u003c");
+  const pgaTemplateJson = JSON.stringify(pgaTemplate).replace(/</g, "\\u003c");
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -1660,6 +1684,12 @@ function makeHtml(rows, selection, projectContext) {
       gap: 8px;
       margin-bottom: 3px;
     }
+    .revision-select {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
     .note-summary-key {
       color: var(--muted);
       font-weight: 700;
@@ -1706,7 +1736,11 @@ function makeHtml(rows, selection, projectContext) {
     .hide-source td:nth-child(2) {
       display: none;
     }
-    .hide-diff [data-diff] {
+    .hide-translation-diff [data-diff-kind="translation"],
+    .hide-revision-diff [data-diff-kind="revision"],
+    .hide-translation-diff [data-diff][data-has-revision="0"],
+    .hide-revision-diff [data-diff][data-has-translation="0"],
+    .hide-translation-diff.hide-revision-diff [data-diff] {
       display: none;
     }
     .pagination-bar {
@@ -1828,11 +1862,12 @@ function makeHtml(rows, selection, projectContext) {
         <div class="toolbar-actions">
           <div class="display-toggles" aria-label="显示列">
             <label><input id="showSource" type="checkbox" checked>原文</label>
-            <label><input id="showDiff" type="checkbox" checked>差异</label>
+            <label><input id="showTranslationDiff" type="checkbox" checked>译文差异</label>
+            <label><input id="showRevisionDiff" type="checkbox" checked>修改差异</label>
           </div>
           <div class="action-buttons">
             <button id="acceptAiSame" class="accept-ai-same" type="button">确认AI不改</button>
-            <button id="exportNotes" type="button">导出</button>
+            <button id="exportNotes" type="button">导出修改结果</button>
             <button id="clearAiLog" class="ai-log-clear" type="button">清AI记录</button>
             <button id="clearFilter" class="filter-clear" type="button">清筛选</button>
           </div>
@@ -1964,6 +1999,7 @@ function makeHtml(rows, selection, projectContext) {
   <script>
     const storageKey = ${JSON.stringify(storageKey)};
     const pageMeta = ${JSON.stringify(clientMeta)};
+    const pgaTemplate = ${pgaTemplateJson};
     const pageLabels = pageMeta.pageLabels;
     const aiConfigStorageKey = "translation-compare-ai-config-v1";
     const allRows = JSON.parse(document.getElementById("rowData").textContent);
@@ -1982,7 +2018,8 @@ function makeHtml(rows, selection, projectContext) {
     const noteFilter = document.getElementById("noteFilter");
     const doneFilter = document.getElementById("doneFilter");
     const showSource = document.getElementById("showSource");
-    const showDiff = document.getElementById("showDiff");
+    const showTranslationDiff = document.getElementById("showTranslationDiff");
+    const showRevisionDiff = document.getElementById("showRevisionDiff");
     const emptyState = document.getElementById("emptyState");
     const paginationBar = document.getElementById("paginationBar");
     const paginationStatus = document.getElementById("paginationStatus");
@@ -2025,6 +2062,7 @@ function makeHtml(rows, selection, projectContext) {
     const aiActiveIds = new Set();
     const clearedAiRunIds = new Set();
     const manualNoteOpenIds = new Set();
+    const selectedRevisionIds = new Set();
     const diffHtmlCache = new Map();
     let filteredRows = allRows;
     let currentPage = 1;
@@ -2471,28 +2509,33 @@ function makeHtml(rows, selection, projectContext) {
       const revisionMatchesTw = Boolean(twDiffHtml && revisionDiffHtml && twDiffHtml === revisionDiffHtml);
       const comparisons = [];
       if (twDiffHtml && !revisionMatchesTw) {
-        comparisons.push(
-          '<div class="diff-comparison">' +
+        comparisons.push({
+          kind: "translation",
+          html: '<div class="diff-comparison" data-diff-kind="translation">' +
           '<div class="version-label"><span>' + escapeHtml(pageLabels.cn) + ' -> ' + escapeHtml(pageLabels.tw) + '简体化</span></div>' +
           '<div lang="zh-Hans">' + twDiffHtml + '</div>' +
-          '</div>'
-        );
+          '</div>',
+        });
       }
       if (revisionDiffHtml) {
+        const id = String(row.index);
         const matchBadge = revisionMatchesTw
           ? '<span class="diff-match-badge" title="与' + escapeHtml(pageLabels.tw) + '简体化的差异完全相同">同' + escapeHtml(pageLabels.tw) + '简体化</span>'
           : "";
-        comparisons.push(
-          '<div class="diff-comparison">' +
-          '<div class="version-label"><span>' + escapeHtml(pageLabels.cn) + ' -> 修改结果</span>' + matchBadge + '</div>' +
+        comparisons.push({
+          kind: "revision",
+          html: '<div class="diff-comparison" data-diff-kind="revision">' +
+          '<div class="version-label"><label class="revision-select"><span>' + escapeHtml(pageLabels.cn) + ' -> 修改结果</span><input type="checkbox" data-export-revision="' + escapeHtml(id) + '" aria-label="选择第 ' + escapeHtml(id) + ' 行修改结果"' + (selectedRevisionIds.has(id) ? " checked" : "") + '></label>' + matchBadge + '</div>' +
           '<div lang="zh-Hans">' + revisionDiffHtml + '</div>' +
-          '</div>'
-        );
+          '</div>',
+        });
       }
+      const hasTranslation = comparisons.some((item) => item.kind === "translation");
+      const hasRevision = comparisons.some((item) => item.kind === "revision");
       return comparisons.length
-        ? '<section class="diff-block" data-diff>' +
+        ? '<section class="diff-block" data-diff data-has-translation="' + (hasTranslation ? "1" : "0") + '" data-has-revision="' + (hasRevision ? "1" : "0") + '">' +
           '<div class="diff-title">差异辅助</div>' +
-          comparisons.join("") +
+          comparisons.map((item) => item.html).join("") +
           '</section>'
         : "";
     }
@@ -2948,6 +2991,17 @@ function makeHtml(rows, selection, projectContext) {
         saveNotes();
         updateDoneCount();
         if (doneMode !== "all") applyFilters();
+        return;
+      }
+
+      const revisionBox = event.target.closest("[data-export-revision]");
+      if (revisionBox) {
+        const id = revisionBox.dataset.exportRevision;
+        if (revisionBox.checked) {
+          selectedRevisionIds.add(id);
+        } else {
+          selectedRevisionIds.delete(id);
+        }
       }
     });
 
@@ -3013,8 +3067,12 @@ function makeHtml(rows, selection, projectContext) {
       document.documentElement.classList.toggle("hide-source", !showSource.checked);
       syncVisibleRowLayout();
     });
-    showDiff.addEventListener("change", () => {
-      document.documentElement.classList.toggle("hide-diff", !showDiff.checked);
+    showTranslationDiff.addEventListener("change", () => {
+      document.documentElement.classList.toggle("hide-translation-diff", !showTranslationDiff.checked);
+      syncVisibleRowLayout();
+    });
+    showRevisionDiff.addEventListener("change", () => {
+      document.documentElement.classList.toggle("hide-revision-diff", !showRevisionDiff.checked);
       syncVisibleRowLayout();
     });
     aiIds.monitorEnabled.addEventListener("change", () => {
@@ -3064,13 +3122,44 @@ function makeHtml(rows, selection, projectContext) {
       doneFilter.setAttribute("aria-pressed", "false");
       doneFilter.textContent = "未人工确认";
       showSource.checked = true;
-      showDiff.checked = true;
-      document.documentElement.classList.remove("hide-source", "hide-diff");
+      showTranslationDiff.checked = true;
+      showRevisionDiff.checked = true;
+      document.documentElement.classList.remove("hide-source", "hide-translation-diff", "hide-revision-diff");
       applyFilters();
     });
 
-    function csvCell(value) {
-      return '"' + String(value || "").replaceAll('"', '""') + '"';
+    function selectedRevisionEntries() {
+      const entries = [];
+      for (const row of allRows) {
+        const id = String(row.index);
+        if (!selectedRevisionIds.has(id)) continue;
+        const revision = parseAiNote(notes[id]?.note || "")?.revision || "";
+        if (!row.cn || !revision) continue;
+        entries.push({ id, searchText: row.cn, replaceText: revision });
+      }
+      return entries;
+    }
+
+    function shortTimestamp(date = new Date()) {
+      const pad = (value) => String(value).padStart(2, "0");
+      return pad(date.getMonth() + 1) + pad(date.getDate()) + "-" + pad(date.getHours()) + pad(date.getMinutes());
+    }
+
+    function escapePgaText(value) {
+      return String(value || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;");
+    }
+
+    function buildPgaContent(entries) {
+      const pairPattern = /(^[ \\t]*)<searchtext>[\\s\\S]*?<\\/searchtext>(\\r?\\n)\\1<replacetext>[\\s\\S]*?<\\/replacetext>/m;
+      const match = pgaTemplate.match(pairPattern);
+      if (!match) throw new Error("PGA 模板中未找到连续的 searchtext 和 replacetext。");
+      const indent = match[1];
+      const newline = match[2];
+      const replacement = entries.map((entry) =>
+        indent + '<searchtext>' + escapePgaText(entry.searchText) + '</searchtext>' + newline +
+        indent + '<replacetext>' + escapePgaText(entry.replaceText) + '</replacetext>'
+      ).join(newline);
+      return pgaTemplate.replace(pairPattern, replacement);
     }
 
     document.getElementById("acceptAiSame").addEventListener("click", () => {
@@ -3094,20 +3183,43 @@ function makeHtml(rows, selection, projectContext) {
     });
 
     document.getElementById("exportNotes").addEventListener("click", () => {
-      const lines = [["index", "manual_done", "ai_done", "note"].join(",")];
-      for (const [id, item] of Object.entries(notes)) {
-        const noteText = combinedNoteText(item);
-        const aiDone = Boolean(item.aiDone || hasAiDecisionNote(item.note));
-        if (!noteText && !item.manualDone && !aiDone) continue;
-        lines.push([csvCell(id), csvCell(item.manualDone ? "1" : "0"), csvCell(aiDone ? "1" : "0"), csvCell(noteText)].join(","));
+      const entries = selectedRevisionEntries();
+      if (!entries.length) {
+        setTemporaryStatus("请先勾选要导出的修改结果。", 5000);
+        return;
       }
-      const blob = new Blob(["\\uFEFF" + lines.join("\\n")], { type: "text/csv;charset=utf-8" });
+      let content;
+      try {
+        content = buildPgaContent(entries);
+      } catch (error) {
+        setTemporaryStatus(error.message, 8000);
+        return;
+      }
+      const blob = new Blob([content], { type: "application/xml;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "校对备注.csv";
+      a.download = "修改" + entries.length + "处-" + shortTimestamp() + ".pga";
       a.click();
       URL.revokeObjectURL(url);
+      const markDone = confirm("是否人工确认导出内容？");
+      if (markDone) {
+        for (const entry of entries) {
+          const current = notes[entry.id] || { note: "", manualNote: "", done: false, manualDone: false, aiDone: false };
+          current.manualDone = true;
+          current.done = true;
+          notes[entry.id] = current;
+        }
+        saveNotes();
+      }
+      selectedRevisionIds.clear();
+      if (markDone) {
+        applyFilters({ reset: false });
+        setTemporaryStatus("已导出 " + entries.length + " 处修改结果，并标记为人工确认。", 5000);
+      } else {
+        renderVisibleRows({ reset: false });
+        setTemporaryStatus("已导出 " + entries.length + " 处修改结果，并清空勾选状态。", 5000);
+      }
     });
 
     function aiConfig() {
@@ -3575,8 +3687,9 @@ async function main() {
   const { tw, cn, jp } = await loadParagraphs(selection);
   const rows = alignRows(cn, tw, jp);
   const projectContext = createProjectContext(selection, rows);
+  const pgaTemplate = loadPgaTemplate();
 
-  fs.writeFileSync(path.join(outputDir, "translation-compare.html"), makeHtml(rows, selection, projectContext), "utf8");
+  fs.writeFileSync(path.join(outputDir, "translation-compare.html"), makeHtml(rows, selection, projectContext, pgaTemplate), "utf8");
   fs.writeFileSync(path.join(outputDir, "translation-compare.csv"), toCsv(rows), "utf8");
   const rowsWithSignature = rows.map((row) => ({ ...row, signature: rowSignature(row) }));
   fs.writeFileSync(path.join(outputDir, "translation-compare.json"), JSON.stringify({
