@@ -36,6 +36,7 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(html, /<option value="cn">B 译文<\/option>/);
   assert.doesNotMatch(html, /<option value="tw">/);
   assert.match(html, /目标固定为译文 B，参考原文 A/);
+  assert.match(html, /\.ai-secondary\s*\{[^}]*align-items: start;/);
 
   const script = html.split("<script>")[1].split("</script>")[0];
   assert.doesNotThrow(() => new Function(script));

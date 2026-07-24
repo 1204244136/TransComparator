@@ -1190,7 +1190,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       display: grid;
       grid-template-columns: minmax(120px, 150px) minmax(80px, 110px) minmax(100px, 130px) minmax(0, 1fr);
       gap: 8px 10px;
-      align-items: end;
+      align-items: start;
     }
     .ai-controls {
       grid-column: 1 / -1;
