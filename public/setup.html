@@ -449,6 +449,27 @@
       grid-template-columns: 1fr 1fr;
       gap: 8px;
     }
+    .project-controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 112px;
+      gap: 8px;
+      align-items: end;
+    }
+    .project-controls label {
+      margin-bottom: 5px;
+    }
+    .project-summary {
+      min-height: 43px;
+      padding-top: 9px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+    .project-summary strong {
+      color: var(--text);
+    }
     .check-grid {
       display: grid;
       gap: 8px;
@@ -595,6 +616,9 @@
         flex-direction: column;
         gap: 6px;
       }
+      .project-controls {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -737,6 +761,22 @@
       </div>
 
       <div class="panel stack">
+        <div class="scope-head">
+          <h2>已生成项目</h2>
+          <span id="projectCount" class="section-kicker">0 个项目</span>
+        </div>
+        <div class="project-controls">
+          <div>
+            <label for="projectSelect">选择项目</label>
+            <select id="projectSelect" disabled>
+              <option value="">尚无已生成项目</option>
+            </select>
+          </div>
+          <button id="switchProjectButton" type="button" disabled>切换项目</button>
+        </div>
+        <div id="projectSummary" class="project-summary">生成完成的工作台会保存在这里。</div>
+      </div>
+      <div class="panel stack">
         <h2>已导入文件</h2>
         <div class="file-list">
           <table>
@@ -793,6 +833,10 @@
       saved: false,
       savedSettingsLoaded: false,
       uploading: new Set(),
+      projects: [],
+      activeProjectKey: "",
+      switchingProject: false,
+      pipelineRunning: false,
     };
     const ids = {
       trilingualScope: document.getElementById("trilingualScope"),
@@ -807,6 +851,10 @@
       generateKicker: document.getElementById("generateKicker"),
       generateHint: document.getElementById("generateHint"),
       status: document.getElementById("status"),
+      projectCount: document.getElementById("projectCount"),
+      projectSelect: document.getElementById("projectSelect"),
+      switchProjectButton: document.getElementById("switchProjectButton"),
+      projectSummary: document.getElementById("projectSummary"),
       fileRows: document.getElementById("fileRows"),
       saveButton: document.getElementById("saveButton"),
       resetButton: document.getElementById("resetButton"),
@@ -856,6 +904,62 @@
       if (bytes < 1024) return `${bytes} B`;
       if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
       return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    }
+
+    function formatGeneratedAt(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "时间未知";
+      return new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(date);
+    }
+
+    function selectedProject() {
+      return state.projects.find((project) => project.id === ids.projectSelect.value) || null;
+    }
+
+    function updateProjectSelection() {
+      const project = selectedProject();
+      if (!project) {
+        ids.projectSummary.textContent = "生成完成的工作台会保存在这里。";
+        ids.switchProjectButton.disabled = true;
+        return;
+      }
+      const mode = project.comparisonMode === "bilingual" ? "双语" : "三语";
+      const files = Object.values(project.files || {}).map((file) => file.name).filter(Boolean).join(" / ");
+      ids.projectSummary.innerHTML = `<strong>${project.active ? "当前项目" : "可切换项目"}</strong> · ${mode} · ${project.rowCount} 行 · ${escapeHtml(formatGeneratedAt(project.generatedAt))}<br>${escapeHtml(files)}`;
+      ids.switchProjectButton.disabled = project.active || state.switchingProject || state.pipelineRunning;
+    }
+
+    function renderProjects(projects = [], activeProjectKey = "") {
+      const previousSelection = ids.projectSelect.value;
+      state.projects = projects;
+      state.activeProjectKey = activeProjectKey;
+      ids.projectCount.textContent = `${projects.length} 个项目`;
+      ids.projectSelect.disabled = projects.length === 0;
+      ids.projectSelect.replaceChildren(...(projects.length ? projects.map((project) => {
+        const option = document.createElement("option");
+        option.value = project.id;
+        option.textContent = `${project.active ? "当前 · " : ""}${project.name}`;
+        return option;
+      }) : [new Option("尚无已生成项目", "")]));
+      const preferred = projects.some((project) => project.id === previousSelection)
+        ? previousSelection
+        : (activeProjectKey || projects[0]?.id || "");
+      ids.projectSelect.value = preferred;
+      updateProjectSelection();
+    }
+
+    function setOutputUrl(url) {
+      for (const link of [ids.openOutput, ids.openOutputForAi]) {
+        link.href = url || "#";
+        link.classList.toggle("disabled", !url);
+      }
     }
 
     function renderComparisonMode() {
@@ -1068,10 +1172,8 @@
       ids.preserveRuby.checked = true;
       ids.preserveBold.checked = true;
       ids.runButton.disabled = true;
-      ids.openOutput.classList.add("disabled");
-      ids.openOutput.href = "#";
-      ids.openOutputForAi.classList.add("disabled");
-      ids.openOutputForAi.href = "#";
+      const activeProject = state.projects.find((project) => project.active);
+      setOutputUrl(activeProject?.outputUrl || "");
       ids.log.textContent = "生成日志会显示在这里。";
       updateProgress({ current: 0, total: 2, percent: 0, step: "idle" });
       for (const role of ["jp", "cn", "tw"]) ids[`${role}File`].value = "";
@@ -1090,6 +1192,7 @@
         starting: "准备生成",
         "align:jp": "阶段 1/2：导出段落并完成跨语言对齐",
         build: "阶段 2/2：构建比较工作台",
+        ready: "项目已就绪",
         done: "生成完成",
         failed: "生成失败",
       };
@@ -1104,29 +1207,30 @@
 
     function renderPipeline(pipeline) {
       if (!pipeline) return;
+      state.pipelineRunning = Boolean(pipeline.running);
       ids.runButton.disabled = Boolean(pipeline.running) || !state.saved;
+      updateProjectSelection();
       updateProgress(pipeline.progress || { step: pipeline.step });
       const stickToBottom = ids.log.scrollHeight - ids.log.scrollTop - ids.log.clientHeight <= 24;
       const logs = pipeline.logs?.length ? pipeline.logs.join("\n") : "生成日志会显示在这里。";
       ids.log.textContent = logs;
       if (stickToBottom) ids.log.scrollTop = ids.log.scrollHeight;
       if (pipeline.outputExists && pipeline.outputUrl) {
-        ids.openOutput.href = pipeline.outputUrl;
-        ids.openOutput.classList.remove("disabled");
-        ids.openOutputForAi.href = pipeline.outputUrl;
-        ids.openOutputForAi.classList.remove("disabled");
+        setOutputUrl(pipeline.outputUrl);
       }
       if (pipeline.running) {
         setRunStatus(`正在生成：${pipeline.step}`, "warn");
       } else if (pipeline.step === "done") {
         setRunStatus("生成完成，可以打开工作台。", "ok");
+      } else if (pipeline.step === "ready") {
+        setRunStatus("项目已切换，可以打开工作台。", "ok");
       } else if (pipeline.step === "failed") {
         setRunStatus(pipeline.error || "生成失败。", "error");
       }
     }
 
-    function applySavedSelection(saved, savedFiles = {}) {
-      if (!saved || state.savedSettingsLoaded || importedFiles().length) return;
+    function applySavedSelection(saved, savedFiles = {}, force = false) {
+      if (!saved || (!force && (state.savedSettingsLoaded || importedFiles().length))) return;
       state.comparisonMode = saved.comparisonMode === "bilingual" ? "bilingual" : "trilingual";
       state.roleFiles = {
         jp: savedFiles.jp || null,
@@ -1139,6 +1243,10 @@
       renderFiles();
       ids.preserveRuby.checked = saved.inlineMarkup?.ruby !== false;
       ids.preserveBold.checked = saved.inlineMarkup?.bold !== false;
+      for (const role of ["jp", "cn", "tw"]) {
+        ids[`${role}Label`].value = saved.labels?.[role] || { jp: "日文", cn: "简中", tw: "台版" }[role];
+        ids[`${role}Start`].value = saved.startMarkers?.[role] || "";
+      }
       state.saved = validateUnique();
       state.savedSettingsLoaded = true;
     }
@@ -1149,6 +1257,7 @@
         const data = await response.json();
         if (data.ok) {
           applySavedSelection(data.saved, data.savedFiles);
+          renderProjects(data.projects, data.activeProjectKey);
           renderPipeline(data.pipeline);
         }
       } catch {
@@ -1209,6 +1318,28 @@
       }
     }
 
+    async function switchProject() {
+      const project = selectedProject();
+      if (!project || project.active || state.switchingProject) return;
+      state.switchingProject = true;
+      updateProjectSelection();
+      setRunStatus(`正在切换项目：${project.name}`, "warn");
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/activate`, { method: "POST" });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error);
+        applySavedSelection(data.saved, data.savedFiles, true);
+        renderProjects(data.projects, data.activeProjectKey);
+        renderPipeline(data.pipeline);
+        setStatus(`已载入项目：${data.project.name}`, "ok");
+      } catch (error) {
+        setRunStatus(error.message, "error");
+      } finally {
+        state.switchingProject = false;
+        updateProjectSelection();
+      }
+    }
+
     function escapeHtml(value) {
       return String(value || "")
         .replace(/&/g, "&amp;")
@@ -1220,6 +1351,8 @@
     ids.saveButton.addEventListener("click", save);
     ids.resetButton.addEventListener("click", reset);
     ids.runButton.addEventListener("click", runPipeline);
+    ids.projectSelect.addEventListener("change", updateProjectSelection);
+    ids.switchProjectButton.addEventListener("click", switchProject);
     ids.aiStopButton.addEventListener("click", stopAiProofread);
     for (const role of ["jp", "cn", "tw"]) {
       const dropzone = ids[`${role}Dropzone`];

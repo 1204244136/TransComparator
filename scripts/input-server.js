@@ -25,6 +25,11 @@ const {
   startProofread,
   stopProofread,
 } = require("./ai-proofread");
+const {
+  activateProject,
+  archiveCurrentProject,
+  listProjects,
+} = require("./project-store");
 
 const rootDir = path.join(__dirname, "..");
 const publicDir = path.join(rootDir, "public");
@@ -271,9 +276,11 @@ async function runPipeline() {
     await runCommand(npmCommand, ["run", "align:jp"], "align:jp", { current: 0, total: 2, percent: 10 });
     pipeline.progress = { current: 1, total: 2, percent: 50, step: "build" };
     await runCommand(npmCommand, ["run", "build"], "build", { current: 1, total: 2, percent: 60 });
+    const project = archiveCurrentProject();
     pipeline.step = "done";
     pipeline.progress = { current: 2, total: 2, percent: 100, step: "done" };
     pipeline.code = 0;
+    pushLog(`Project archived: ${project.name}`);
     pushLog(`Done. Output: ${compareHtmlFile}`);
   } catch (error) {
     pipeline.step = "failed";
@@ -300,6 +307,16 @@ function pipelineStatus() {
     outputExists: fs.existsSync(compareHtmlFile),
     outputUrl: fs.existsSync(compareHtmlFile) ? "/output/translation-compare.html" : "",
   };
+}
+
+function markProjectReady(project) {
+  pipeline.step = "ready";
+  pipeline.progress = { current: 2, total: 2, percent: 100, step: "ready" };
+  pipeline.code = 0;
+  pipeline.error = "";
+  pipeline.startedAt = null;
+  pipeline.finishedAt = new Date().toISOString();
+  pipeline.logs = [`已切换项目：${project.name}`];
 }
 
 function serveStatic(req, res, pathname) {
@@ -341,7 +358,44 @@ async function handleApi(req, res, pathname, searchParams) {
       const saved = fs.existsSync(selectionFile)
         ? JSON.parse(fs.readFileSync(selectionFile, "utf8"))
         : null;
-      sendJson(res, 200, { ok: true, selectionFile, saved, savedFiles: savedFilePayloads(saved), pipeline: pipelineStatus() });
+      sendJson(res, 200, {
+        ok: true,
+        selectionFile,
+        saved,
+        savedFiles: savedFilePayloads(saved),
+        pipeline: pipelineStatus(),
+        ...listProjects(),
+      });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/projects") {
+      sendJson(res, 200, { ok: true, ...listProjects() });
+      return;
+    }
+
+    if (req.method === "POST" && /^\/api\/projects\/[^/]+\/activate$/.test(pathname)) {
+      if (pipeline.running) {
+        sendJson(res, 409, { ok: false, error: "生成流程正在运行，暂时不能切换项目。" });
+        return;
+      }
+      if (aiProofreadStatus().running) {
+        sendJson(res, 409, { ok: false, error: "AI 校对正在运行，请先停止后再切换项目。" });
+        return;
+      }
+      clearProofreadCache();
+      const projectKey = decodeURIComponent(pathname.split("/")[3]);
+      const project = activateProject(projectKey);
+      const saved = JSON.parse(fs.readFileSync(selectionFile, "utf8"));
+      markProjectReady(project);
+      sendJson(res, 200, {
+        ok: true,
+        project,
+        saved,
+        savedFiles: savedFilePayloads(saved),
+        pipeline: pipelineStatus(),
+        ...listProjects({ adoptCurrent: false }),
+      });
       return;
     }
 
