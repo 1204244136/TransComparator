@@ -41,13 +41,13 @@ const knownModelFallbacks = [
 const proofreadPrompt = {
   system: [
     "你是严谨的翻译校对助手，目标是辅助人工校对，不替代人工最终判断。",
-    "原文是准入边界；非原文 A 和非原文 B 是同级材料，不要默认任何一方更权威。",
-    "semanticSame 只表示两份非原文核心语义是否相同；needsEdit 表示目标列是否需要修改，二者必须分别判断。",
-    "若语义相同但目标列表达生硬、翻译腔、遗漏语气或另一列明显更自然，semanticSame=true 但 needsEdit=true，并给出 revisedText。",
-    "若两列语义不同但目标列更准确或更贴合原文，semanticSame=false、needsEdit=false、better=target，不要建议修改目标列。",
-    "因此 semanticSame=false 与 needsEdit=false 可以同时成立；这表示另一列不同，但目标列无需修改。",
+    "原文 A 是准入边界。三语模式下，非原文 B 和非原文 C 是同级材料，不要默认任何一方更权威；双语模式下，B 是唯一修改列。",
+    "semanticSame 表示目标列与当前比较参考的核心语义是否相同；needsEdit 表示目标列是否需要修改，二者必须分别判断。",
+    "若语义相同但目标列表达生硬、翻译腔、遗漏语气或参考文本显示出明显问题，semanticSame=true 但 needsEdit=true，并给出 revisedText。",
+    "三语模式下，若目标列与另一非原文不同但目标列更准确或更贴合原文，semanticSame=false、needsEdit=false、better=target，不要建议修改目标列。",
+    "因此三语模式中 semanticSame=false 与 needsEdit=false 可以同时成立；这表示另一非原文不同，但目标列无需修改。",
     "需要修改时，revisedText 必须是目标列修改后的完整句子或段落，可直接整体替换，并保留目标列的语言、字形和文体习惯（例如校对简中列就输出完整简中结果）；不能只描述改法或写“参考另一版本”。",
-    "better=counterpart 表示另一列（counterpartText）在该处表达更好：应以它为基准，在目标列原文上做最小化局部替换，只把不如另一列的词句换成更优写法并调整为目标列字形用词，保留目标列已正确通顺的部分；禁止抛开现有译文、仅凭原文重译整句。",
+    "三语模式下，better=counterpart 表示另一非原文列（counterpartText）在该处表达更好：应以它为基准，在目标列原文上做最小化局部替换，只把不如另一列的词句换成更优写法并调整为目标列字形用词，保留目标列已正确通顺的部分；禁止抛开现有译文、仅凭原文重译整句。双语模式下原文 A 不是候选译文，不得直接复制进 B。",
     "仅凭当前行不足以判断时（如代词、承接关系、省略主语、术语延续、上文伏笔或下文指代影响判断）返回 needsContext=true；有足够依据就给出明确判断，不要为保险而索要上下文。",
     "不要猜测需要多少上下文，也不要说明上下文请求范围；程序会在 needsContext=true 时每轮自动补充当前行前后一行，直到你能判断或达到上限。",
     "summary 必须与 semanticSame、needsEdit、better、revisedText 完全一致；不要出现 summary 说无需修改但 needsEdit=true，或 summary 建议优化但 needsEdit=false 的矛盾。",
@@ -57,7 +57,7 @@ const proofreadPrompt = {
     semanticSame: "boolean",
     needsEdit: "boolean（目标列是否需要修改；与 semanticSame 分开判断）",
     needsContext: "boolean",
-    better: "target | counterpart | neither | unclear（counterpart 表示另一列在此处表达更好，应以它为基准局部替换目标列）",
+    better: "target | counterpart | neither | unclear（三语模式中 counterpart 表示另一非原文更好；双语模式中原文不是候选译文，需要修改时通常使用 neither）",
     summary: "分析为什么需要或不需要修改；需要上下文时说明缺少哪类上下文；不要留空",
     revisedText: "需要修改时，输出目标列修改后的完整句子或完整段落；better=counterpart 时须在目标列原文上做局部替换、把另一列更优的片段融入目标列，禁止抛开现有译文按原文重译；不需要修改或需要上下文则留空",
   },
@@ -76,6 +76,7 @@ const status = {
   startedAt: null,
   finishedAt: null,
   target: "cn",
+  proofreadMode: "bilingual",
   provider: "local",
   model: "",
   projectKey: "",
@@ -123,6 +124,7 @@ function clientStatus() {
     startedAt: status.startedAt,
     finishedAt: status.finishedAt,
     target: status.target,
+    proofreadMode: status.proofreadMode,
     provider: status.provider,
     model: status.model,
     projectKey: status.projectKey,
@@ -188,11 +190,13 @@ function cleanConfig(input = {}) {
   const provider = providerDefaults[input.provider] ? input.provider : "local";
   const defaults = providerDefaults[provider];
   const target = input.target === "tw" ? "tw" : "cn";
+  const proofreadMode = input.proofreadMode === "trilingual" ? "trilingual" : "bilingual";
   const concurrency = clampInteger(input.concurrency, 1, 12, 3);
   const similarityThreshold = clampNumber(input.similarityThreshold, 0.5, 1, 0.92);
   return {
     provider,
     target,
+    proofreadMode,
     concurrency,
     similarityThreshold,
     projectKey: String(input.projectKey || "").trim(),
@@ -233,6 +237,7 @@ function resetStatus(config, rowsLength) {
   status.startedAt = status.runId;
   status.finishedAt = null;
   status.target = config.target;
+  status.proofreadMode = config.proofreadMode;
   status.provider = config.provider;
   status.model = config.model;
   status.projectKey = config.projectKey;
@@ -260,10 +265,10 @@ function resetStatus(config, rowsLength) {
   controllers = new Set();
 }
 
-function makePrefilterResult(row, labels, classification) {
-  const sourceLabel = labels.jp || "原文";
-  const leftLabel = labels.cn || "非原文 A";
-  const rightLabel = labels.tw || "非原文 B";
+function makePrefilterResult(row, labels, classification, comparisonMode = "trilingual") {
+  const sourceLabel = labels.jp || "原文 A";
+  const leftLabel = comparisonMode === "bilingual" ? sourceLabel : (labels.cn || "非原文 B");
+  const rightLabel = comparisonMode === "bilingual" ? (labels.cn || "译文 B") : (labels.tw || "非原文 C");
   const isConflict = classification.kind === "structured-conflict";
   const isSimilarity = classification.kind === "similarity";
   const marker = isSimilarity ? "[相似度预筛]" : "[规则预筛]";
@@ -315,11 +320,13 @@ async function startProofread(input) {
 
   const { project, rows } = readRows();
   requireMatchingProjectSnapshot(config, project);
+  config.proofreadMode = project.comparisonMode === "bilingual" ? "bilingual" : "trilingual";
+  if (config.proofreadMode === "bilingual") config.target = "cn";
   resetStatus(config, rows.length);
   const labels = {
-    jp: "原文",
-    cn: "非原文 A",
-    tw: "非原文 B",
+    jp: "原文 A",
+    cn: "非原文 B",
+    tw: "非原文 C",
     ...(input.labels || {}),
   };
   const queue = [];
@@ -329,8 +336,8 @@ async function startProofread(input) {
       status.skippedDone += 1;
       continue;
     }
-    const left = row.cn || "";
-    const right = row.twCn || toCn(row.tw || "");
+    const left = config.proofreadMode === "bilingual" ? (row.jp || "") : (row.cn || "");
+    const right = config.proofreadMode === "bilingual" ? (row.cn || "") : (row.twCn || toCn(row.tw || ""));
     const classification = classifyPrefilter({
       source: row.jp || "",
       left,
@@ -341,14 +348,14 @@ async function startProofread(input) {
       const prefilterKind = classification.kind === "similarity"
         ? "similarity"
         : (classification.kind === "structured-conflict" ? "structured-conflict" : "rule");
-      addResult(makePrefilterResult(row, labels, classification), { prefilterKind });
+      addResult(makePrefilterResult(row, labels, classification, config.proofreadMode), { prefilterKind });
       continue;
     }
     queue.push(row);
   }
 
   status.queued = queue.length;
-  pushLog(`人工确认跳过 ${status.skippedDone} 行，规则跳过 ${status.rulePrefiltered} 行，结构化冲突 ${status.structuredConflicts} 行，相似度跳过 ${status.similarityPrefiltered} 行，剩余 ${queue.length} 行进入 AI 校对。`);
+  pushLog(`${config.proofreadMode === "bilingual" ? "双语版本校对" : "三语语境校对"}：人工确认跳过 ${status.skippedDone} 行，规则跳过 ${status.rulePrefiltered} 行，结构化冲突 ${status.structuredConflicts} 行，相似度跳过 ${status.similarityPrefiltered} 行，剩余 ${queue.length} 行进入 AI 校对。`);
   runQueue(queue, rows, config, labels).catch((error) => {
     status.error = error.message || String(error);
     pushLog(status.error);
@@ -515,13 +522,18 @@ function finish() {
 }
 
 async function proofreadRow(row, allRows, config, labels) {
-  const targetKey = config.target;
-  const counterpartKey = targetKey === "cn" ? "tw" : "cn";
-  const targetLabel = targetKey === "cn" ? (labels.cn || "非原文 A") : (labels.tw || "非原文 B");
-  const counterpartLabel = counterpartKey === "cn" ? (labels.cn || "非原文 A") : (labels.tw || "非原文 B");
-  const targetText = targetKey === "cn" ? row.cn : row.tw;
-  const counterpartText = counterpartKey === "cn" ? row.cn : row.tw;
-  const diffHelper = diffSummary(row.cn || "", row.twCn || row.tw || "", labels);
+  const bilingual = config.proofreadMode === "bilingual";
+  const targetKey = bilingual ? "cn" : config.target;
+  const counterpartKey = bilingual ? "jp" : (targetKey === "cn" ? "tw" : "cn");
+  const targetLabel = targetKey === "cn" ? (labels.cn || "非原文 B") : (labels.tw || "非原文 C");
+  const counterpartLabel = counterpartKey === "jp"
+    ? (labels.jp || "原文 A")
+    : (counterpartKey === "cn" ? (labels.cn || "非原文 B") : (labels.tw || "非原文 C"));
+  const targetText = textForKey(row, targetKey);
+  const counterpartText = textForKey(row, counterpartKey);
+  const diffHelper = bilingual
+    ? "双语模式不生成跨语言词级差异；请依据原文 A 与译文 B 的语义对应判断。"
+    : diffSummary(row.cn || "", row.twCn || row.tw || "", labels);
   const basePayload = {
     row,
     targetLabel,
@@ -550,7 +562,7 @@ async function proofreadRow(row, allRows, config, labels) {
     const added = expandContextRing(contextState);
     if (!added.length) break;
   }
-  decision = ensureRevisedText(decision, targetKey, targetText, counterpartText);
+  decision = ensureRevisedText(decision, targetKey, targetText, counterpartText, config.proofreadMode);
   return decisionToResult(row, decision, targetLabel, counterpartLabel);
 }
 
@@ -671,9 +683,15 @@ function contextRow(row, relative, targetKey, counterpartKey) {
     relative,
     position: relative < 0 ? `前 ${Math.abs(relative)} 行` : `后 ${relative} 行`,
     source: row.jp || "",
-    target: targetKey === "cn" ? row.cn : row.tw,
-    counterpart: counterpartKey === "cn" ? row.cn : row.tw,
+    target: textForKey(row, targetKey),
+    counterpart: textForKey(row, counterpartKey),
   };
+}
+
+function textForKey(row, key) {
+  if (key === "jp") return row.jp || "";
+  if (key === "tw") return row.tw || "";
+  return row.cn || "";
 }
 
 function contextItemChars(item) {
@@ -681,11 +699,11 @@ function contextItemChars(item) {
     .reduce((sum, value) => sum + String(value || "").length, 0);
 }
 
-function ensureRevisedText(decision, targetKey, targetText, counterpartText) {
+function ensureRevisedText(decision, targetKey, targetText, counterpartText, proofreadMode = "trilingual") {
   if (!decision.needsEdit || decision.better === "target" || decision.better === "unclear") return decision;
   if (decision.revisedText) return decision;
 
-  const fallback = decision.better === "counterpart"
+  const fallback = proofreadMode !== "bilingual" && decision.better === "counterpart"
     ? convertToTargetScript(counterpartText, targetKey)
     : "";
   return {
@@ -715,16 +733,21 @@ function diffSummary(fromText, toText, labels) {
     if (part.added) changes.push(`+ ${value}`);
     if (changes.length >= 24) break;
   }
-  const left = labels.cn || "非原文 A";
-  const right = labels.tw || "非原文 B";
+  const left = labels.cn || "非原文 B";
+  const right = labels.tw || "非原文 C";
   return changes.length
     ? `${left} -> ${right}简体化\n${changes.join("\n")}`
     : "差异辅助未发现明显词级差异。";
 }
 
 function buildMessages(payload, config = {}) {
+  const bilingualMode = config.proofreadMode === "bilingual";
   const user = {
-    task: `校对目标列：${payload.targetLabel}`,
+    task: `${bilingualMode ? "双语版本校对" : "三语语境校对"}；校对目标列：${payload.targetLabel}`,
+    comparisonMode: bilingualMode ? "bilingual" : "trilingual",
+    modePolicy: bilingualMode
+      ? "以原文 A 与译文 B 的语义对应为主要判断对象；只能修改 B，原文 A 用于确认语义边界、遗漏和误译。"
+      : "同时参考原文、目标列和另一非原文列，判断目标列是否准确、通顺并符合原文语义；两份非原文仍是同级材料。",
     contextPolicy: payload.contextMode === "auto"
       ? "已提供自动补充的相邻上下文，请结合上下文给出最终判断。"
       : payload.contextMode === "requested"
@@ -751,8 +774,11 @@ function buildMessages(payload, config = {}) {
     },
     nearbyRows: payload.context,
   };
+  const modeSystem = bilingualMode
+    ? "当前是双语校对：A 是原文，B 是唯一修改列。只能修改 B，并以 A 为语义依据；A 不是可直接复制进 B 的候选译文。需要修改时必须输出符合 B 语言和文体的完整 revisedText。"
+    : "当前是三语校对：A 是原文，B、C 是同级非原文。只修改用户选择的目标列，并同时参考 A 与另一个非原文列。";
   return [
-    { role: "system", content: config.systemPrompt || proofreadPrompt.system },
+    { role: "system", content: `${config.systemPrompt || proofreadPrompt.system}\n${modeSystem}` },
     { role: "user", content: JSON.stringify(user, null, 2) },
   ];
 }
@@ -961,6 +987,7 @@ function analysisLine(decision, fallback = "") {
 }
 
 module.exports = {
+  buildMessages,
   clearProofreadCache,
   clientStatus,
   listModels,

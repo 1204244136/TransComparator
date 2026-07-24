@@ -351,7 +351,7 @@ function alignGroups(left, right, band = 60) {
   return groups;
 }
 
-function alignRows(cn, tw, jp) {
+function alignRows(cn, tw, jp, comparisonMode = "trilingual") {
   const cnTw = alignGroups(cn, tw).map((group) => ({
     ...group,
     cnStart: group.left[0]?.sourceIndex ?? null,
@@ -360,7 +360,7 @@ function alignRows(cn, tw, jp) {
     twEnd: group.right.length ? group.right[group.right.length - 1].sourceIndex + 1 : null,
   }));
   const jpPivotGroups = loadJpGroupAlignmentList(jp);
-  const pivotLang = loadJpPivotLang();
+  const pivotLang = loadJpPivotLang(comparisonMode);
   const rows = [];
 
   for (let i = 0; i < cnTw.length;) {
@@ -418,7 +418,7 @@ function alignRows(cn, tw, jp) {
       .filter((group) => rangesOverlap(groupPivotStart(group, pivotLang), groupPivotEnd(group, pivotLang), unionStart, unionEnd));
     const jpGroups = jpPivotGroups.filter((group) => rangesOverlap(unionStart, unionEnd, group.pivotStart, group.pivotEnd));
     if (jpGroups.length) {
-      rows.push(makeRow(rows.length + 1, cnGroups, jpGroups));
+      rows.push(makeRow(rows.length + 1, cnGroups, jpGroups, comparisonMode));
     }
     i = endIndex;
   }
@@ -434,7 +434,8 @@ function groupPivotEnd(group, pivotLang) {
   return pivotLang === "cn" ? group.cnEnd : group.twEnd;
 }
 
-function makeRow(index, cnGroups, jpGroups) {
+function makeRow(index, cnGroups, jpGroups, comparisonMode = "trilingual") {
+    const bilingual = comparisonMode === "bilingual";
     const cnItems = cnGroups.flatMap((group) => group.left);
     const twItems = cnGroups.flatMap((group) => group.right);
     const jpItems = uniqueBySourceIndex(jpGroups.flatMap((group) => group.items));
@@ -452,13 +453,15 @@ function makeRow(index, cnGroups, jpGroups) {
     return {
       index,
       chapter,
-      relation: `简台 ${cnRelation}${jpRelation ? ` / 日文 ${jpRelation}` : ""}`,
+      relation: bilingual
+        ? `原文-译文 ${jpRelation || relationSummary(jpGroups, "items", "pivotItems")}`
+        : `简台 ${cnRelation}${jpRelation ? ` / 日文 ${jpRelation}` : ""}`,
       jp: jpText,
       jpAlignScore: jpGroups.length ? jpScore : null,
       cn: refined?.cnText ?? cnText,
       tw: refined?.twText ?? twText,
       twCn: refined?.twCnText ?? twCnText,
-      score: refined?.score ?? baseScore,
+      score: bilingual ? jpScore : (refined?.score ?? baseScore),
       refinedScore: refined?.averageMatched ?? null,
       cnChars: sumChars(cnItems),
       twChars: sumChars(twItems),
@@ -595,7 +598,8 @@ function loadJpGroupAlignmentList(jp) {
     }));
 }
 
-function loadJpPivotLang() {
+function loadJpPivotLang(comparisonMode = "trilingual") {
+  if (comparisonMode === "bilingual") return "cn";
   const alignFile = path.join(outputDir, "jp-align.json");
   if (!fs.existsSync(alignFile)) return "tw";
 
@@ -625,6 +629,8 @@ function rowClass(score) {
 }
 
 function makeHtml(rows, selection, projectContext, pgaTemplate) {
+  const comparisonMode = selection.comparisonMode === "bilingual" ? "bilingual" : "trilingual";
+  const bilingual = comparisonMode === "bilingual";
   const generatedAt = new Date(projectContext.generatedAt).toLocaleString("zh-CN", { hour12: false });
   const labels = {
     jp: "日文",
@@ -632,8 +638,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     tw: "台版",
     ...(selection.labels || {}),
   };
-  const pivotLang = loadJpPivotLang();
-  const similarityLabel = `${labels.cn}-${labels.tw}`;
+  const pivotLang = loadJpPivotLang(comparisonMode);
+  const similarityLabel = bilingual ? `${labels.jp}-${labels.cn}` : `${labels.cn}-${labels.tw}`;
   const semanticLabel = `${labels.jp}-${pivotLabel(pivotLang, labels)}`;
   const stats = rows.reduce((acc, row) => {
     const cls = rowClass(row.score);
@@ -650,6 +656,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
   const storageKey = projectContext.notesStorage.key;
   const clientMeta = {
     project: projectContext,
+    comparisonMode,
     pageLabels: {
       jp: labels.jp,
       cn: labels.cn,
@@ -667,6 +674,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     cn: labels.cn,
     tw: labels.tw,
   };
+  const defaultProofreadMode = comparisonMode;
   const clientRows = rows.map((row) => {
     const cls = rowClass(row.score);
     return {
@@ -685,7 +693,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>翻译对比校对工作台</title>
+  <title>${bilingual ? "双语" : "三语"}翻译对比校对工作台</title>
   <style>
     :root {
       color-scheme: light;
@@ -1165,6 +1173,11 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       line-height: 1.25;
       font-weight: 700;
     }
+    .ai-mode-note {
+      margin-top: 3px;
+      font-size: 11px;
+      line-height: 1.3;
+    }
     .ai-secondary {
       grid-column: 1 / -1;
       display: grid;
@@ -1516,6 +1529,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       gap: 0;
       min-height: 100%;
     }
+    .mode-bilingual .version-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
     .version-panel {
       padding: 10px;
       min-width: 0;
@@ -1815,14 +1831,14 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
   </style>
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app-shell mode-${comparisonMode}">
     <header>
       <div class="topbar">
         <div>
-          <h1>翻译对比校对工作台</h1>
+          <h1>${bilingual ? "双语" : "三语"}翻译对比校对工作台</h1>
           <div class="subtle">生成时间 ${escapeHtml(generatedAt)} · 平均相似 ${(avgScore * 100).toFixed(0)}% · 空原文 ${stats.emptySource}</div>
-          <div class="files" title="原文 ${escapeHtml(fileNames.jp || "")} · 非原文 A ${escapeHtml(fileNames.cn || "")} · 非原文 B ${escapeHtml(fileNames.tw || "")}">
-            原文 ${escapeHtml(fileNames.jp || "")} · 非原文 A ${escapeHtml(fileNames.cn || "")} · 非原文 B ${escapeHtml(fileNames.tw || "")}
+          <div class="files" title="原文 A ${escapeHtml(fileNames.jp || "")} · ${bilingual ? "译文 B" : "非原文 B"} ${escapeHtml(fileNames.cn || "")}${bilingual ? "" : ` · 非原文 C ${escapeHtml(fileNames.tw || "")}`} ">
+            原文 A ${escapeHtml(fileNames.jp || "")} · ${bilingual ? "译文 B" : "非原文 B"} ${escapeHtml(fileNames.cn || "")}${bilingual ? "" : ` · 非原文 C ${escapeHtml(fileNames.tw || "")}`}
           </div>
         </div>
         <div class="stats" aria-label="校对统计">
@@ -1862,7 +1878,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         <div class="toolbar-actions">
           <div class="display-toggles" aria-label="显示列">
             <label><input id="showSource" type="checkbox" checked>原文</label>
-            <label><input id="showTranslationDiff" type="checkbox" checked>译文差异</label>
+            <label${bilingual ? " hidden" : ""}><input id="showTranslationDiff" type="checkbox" checked>译文差异</label>
             <label><input id="showRevisionDiff" type="checkbox" checked>修改差异</label>
           </div>
           <div class="action-buttons">
@@ -1905,10 +1921,17 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             </div>
             <div class="ai-secondary">
               <div class="ai-field">
+                <label for="aiProofreadMode">校对模式</label>
+                <select id="aiProofreadMode" disabled>
+                  <option value="${defaultProofreadMode}">${bilingual ? "双语版本校对" : "三语语境校对"}</option>
+                </select>
+                <div id="aiProofreadModeHint" class="subtle ai-mode-note">${bilingual ? "目标固定为译文 B，参考原文 A；原文只作语义边界和上下文。" : "目标可选非原文 B 或 C，同时参考原文 A 和另一版本。"}</div>
+              </div>
+              <div class="ai-field">
                 <label for="aiTarget">校对列</label>
-                <select id="aiTarget">
+                <select id="aiTarget"${bilingual ? " disabled" : ""}>
                   <option value="cn">${escapeHtml(labels.cn)}</option>
-                  <option value="tw">${escapeHtml(labels.tw)}</option>
+                  ${bilingual ? "" : `<option value="tw">${escapeHtml(labels.tw)}</option>`}
                 </select>
               </div>
               <div class="ai-field">
@@ -1916,8 +1939,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
                 <input id="aiConcurrency" type="number" min="1" max="12" value="3">
               </div>
               <div class="ai-field">
-                <label for="aiSimilarity">${escapeHtml(labels.cn)}-${escapeHtml(labels.tw)}相似度预筛选</label>
-                <input id="aiSimilarity" type="text" inputmode="decimal" value="92%" aria-label="${escapeHtml(labels.cn)}-${escapeHtml(labels.tw)}相似度预筛选百分比">
+                <label for="aiSimilarity">${escapeHtml(similarityLabel)}相似度预筛选</label>
+                <input id="aiSimilarity" type="text" inputmode="decimal" value="92%" aria-label="${escapeHtml(similarityLabel)}相似度预筛选百分比">
               </div>
               <div class="ai-controls">
                 <div class="toggle-row ai-options">
@@ -2002,6 +2025,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const pageMeta = ${JSON.stringify(clientMeta)};
     const pgaTemplate = ${pgaTemplateJson};
     const pageLabels = pageMeta.pageLabels;
+    const bilingualMode = pageMeta.comparisonMode === "bilingual";
     const aiConfigStorageKey = "translation-compare-ai-config-v1";
     const automatedNoteMarkers = ["[AI校对]", "[规则预筛]", "[相似度预筛]"];
     const allRows = JSON.parse(document.getElementById("rowData").textContent);
@@ -2044,6 +2068,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       model: document.getElementById("aiModel"),
       refreshModels: document.getElementById("aiRefreshModels"),
       apiKey: document.getElementById("aiApiKey"),
+      proofreadMode: document.getElementById("aiProofreadMode"),
+      proofreadModeHint: document.getElementById("aiProofreadModeHint"),
       target: document.getElementById("aiTarget"),
       concurrency: document.getElementById("aiConcurrency"),
       similarity: document.getElementById("aiSimilarity"),
@@ -2124,6 +2150,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
 
     function normalizeSimilarityInput() {
       aiIds.similarity.value = formatPercentRatio(aiIds.similarity.value);
+    }
+
+    function updateProofreadModeHint() {
+      aiIds.proofreadMode.value = bilingualMode ? "bilingual" : "trilingual";
+      aiIds.proofreadModeHint.textContent = bilingualMode
+        ? "目标固定为译文 B，参考原文 A；原文只作语义边界和上下文。"
+        : "目标可选非原文 B 或 C，同时参考原文 A 和另一版本。";
     }
 
     function automatedNoteMarker(value) {
@@ -2227,6 +2260,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         model: aiIds.model.value,
         modelOptions: aiModelOptions,
         apiKey: aiIds.apiKey.value,
+        proofreadMode: aiIds.proofreadMode.value,
         target: aiIds.target.value,
         concurrency: aiIds.concurrency.value,
         similarity: formatPercentRatio(aiIds.similarity.value),
@@ -2258,6 +2292,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
       if (typeof saved.apiKey === "string") aiIds.apiKey.value = saved.apiKey;
       if (saved.target === "cn" || saved.target === "tw") aiIds.target.value = saved.target;
+      if (bilingualMode) aiIds.target.value = "cn";
       if (saved.concurrency != null) aiIds.concurrency.value = saved.concurrency;
       if (saved.similarity != null) aiIds.similarity.value = formatPercentRatio(saved.similarity);
       aiIds.monitorEnabled.checked = Boolean(saved.monitorEnabled);
@@ -2274,6 +2309,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.monitorSection.hidden = !aiIds.monitorEnabled.checked;
       aiIds.promptSection.hidden = !aiIds.promptVisible.checked;
       normalizeSimilarityInput();
+      updateProofreadModeHint();
     }
 
     function bindDetailsToggle(scope = document) {
@@ -2719,8 +2755,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         .join(" ");
       const cnCopyButton = '<button type="button" class="copy-version" data-copy-text="' + escapeHtml(row.cn || "") + '" title="复制' + escapeHtml(pageLabels.cn) + '">复制</button>';
       const twCopyButton = '<button type="button" class="copy-version" data-copy-text="' + escapeHtml(row.tw || "") + '" title="复制' + escapeHtml(pageLabels.tw) + '">复制</button>';
-      const diffBlock = renderDiffBlock(row, note.note || "");
-      const semanticLine = row.jpAlignScoreText
+      const diffBlock = bilingualMode ? "" : renderDiffBlock(row, note.note || "");
+      const twPanel = bilingualMode ? "" : '<section class="version-panel"><div class="version-label"><span>' + escapeHtml(pageLabels.tw) + '</span>' + twCopyButton + '</div><div lang="zh-Hant">' + escapeHtml(row.tw) + '</div></section>';
+      const twChars = bilingualMode ? "" : ' / ' + escapeHtml(pageLabels.tw) + ' ' + (row.twChars || 0);
+      const semanticLine = !bilingualMode && row.jpAlignScoreText
         ? '<div><dt>' + escapeHtml(pageMeta.semanticLabel) + ' 语义</dt><dd>' + escapeHtml(row.jpAlignScoreText) + '</dd></div>'
         : "";
       return [
@@ -2732,14 +2770,14 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         '<div><dt>关系</dt><dd>' + escapeHtml(row.relation || "") + '</dd></div>',
         '<div><dt>' + escapeHtml(pageMeta.similarityLabel) + ' 相似</dt><dd>' + escapeHtml(row.scoreText || "") + '</dd></div>',
         semanticLine,
-        '<div><dt>字数</dt><dd>' + escapeHtml(pageLabels.jp) + ' ' + (row.jpChars || 0) + ' / ' + escapeHtml(pageLabels.cn) + ' ' + (row.cnChars || 0) + ' / ' + escapeHtml(pageLabels.tw) + ' ' + (row.twChars || 0) + '</dd></div>',
+        '<div><dt>字数</dt><dd>' + escapeHtml(pageLabels.jp) + ' ' + (row.jpChars || 0) + ' / ' + escapeHtml(pageLabels.cn) + ' ' + (row.cnChars || 0) + twChars + '</dd></div>',
         '</dl>',
         '</td>',
         '<td class="source-cell" lang="ja">' + escapeHtml(row.jp) + '</td>',
         '<td class="translation-cell">',
         '<div class="version-grid">',
         '<section class="version-panel"><div class="version-label"><span>' + escapeHtml(pageLabels.cn) + '</span>' + cnCopyButton + '</div><div lang="zh-Hans">' + escapeHtml(row.cn) + '</div></section>',
-        '<section class="version-panel"><div class="version-label"><span>' + escapeHtml(pageLabels.tw) + '</span>' + twCopyButton + '</div><div lang="zh-Hant">' + escapeHtml(row.tw) + '</div></section>',
+        twPanel,
         '</div>',
         '<div data-diff-slot="' + id + '">' + diffBlock + '</div>',
         '</td>',
@@ -3249,6 +3287,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         baseUrl: aiIds.baseUrl.value,
         model: aiIds.model.value,
         apiKey: aiIds.apiKey.value,
+        proofreadMode: aiIds.proofreadMode.value,
         target: aiIds.target.value,
         concurrency: Number(aiIds.concurrency.value),
         similarityThreshold: parsePercentRatio(aiIds.similarity.value),
@@ -3591,10 +3630,11 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
       saveAiConfig();
     });
-    [aiIds.apiKey, aiIds.target, aiIds.concurrency].forEach((input) => {
+    [aiIds.apiKey, aiIds.target, aiIds.concurrency, aiIds.proofreadMode].forEach((input) => {
       input.addEventListener("input", saveAiConfig);
       input.addEventListener("change", saveAiConfig);
     });
+    aiIds.proofreadMode.addEventListener("change", updateProofreadModeHint);
     aiIds.similarity.addEventListener("input", saveAiConfig);
     aiIds.similarity.addEventListener("change", () => {
       normalizeSimilarityInput();
@@ -3695,8 +3735,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
 </html>`;
 }
 
-function toCsv(rows) {
-  const cols = ["index", "chapter", "relation", "score", "jpAlignScore", "jp", "cn", "tw", "twCn"];
+function toCsv(rows, comparisonMode = "trilingual") {
+  const cols = comparisonMode === "bilingual"
+    ? ["index", "chapter", "relation", "score", "jpAlignScore", "jp", "cn"]
+    : ["index", "chapter", "relation", "score", "jpAlignScore", "jp", "cn", "tw", "twCn"];
   const escapeCsv = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
   return [
     cols.join(","),
@@ -3709,12 +3751,12 @@ async function main() {
 
   const selection = await resolveInputSelection({ allowPrompt: false });
   const { tw, cn, jp } = await loadParagraphs(selection);
-  const rows = alignRows(cn, tw, jp);
+  const rows = alignRows(cn, tw, jp, selection.comparisonMode);
   const projectContext = createProjectContext(selection, rows);
   const pgaTemplate = loadPgaTemplate();
 
   fs.writeFileSync(path.join(outputDir, "translation-compare.html"), makeHtml(rows, selection, projectContext, pgaTemplate), "utf8");
-  fs.writeFileSync(path.join(outputDir, "translation-compare.csv"), toCsv(rows), "utf8");
+  fs.writeFileSync(path.join(outputDir, "translation-compare.csv"), toCsv(rows, selection.comparisonMode), "utf8");
   const rowsWithSignature = rows.map((row) => ({ ...row, signature: rowSignature(row) }));
   fs.writeFileSync(path.join(outputDir, "translation-compare.json"), JSON.stringify({
     project: projectContext,
@@ -3732,7 +3774,15 @@ async function main() {
   console.log(`CSV: ${path.join(outputDir, "translation-compare.csv")}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  alignRows,
+  makeHtml,
+  toCsv,
+};

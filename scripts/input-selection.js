@@ -8,9 +8,9 @@ const outputDir = path.join(__dirname, "..", "out");
 const selectionFile = path.join(outputDir, "input-selection.json");
 const langs = ["jp", "cn", "tw"];
 const labels = {
-  jp: "原文",
-  cn: "非原文 A",
-  tw: "非原文 B",
+  jp: "原文 A",
+  cn: "非原文 B",
+  tw: "非原文 C",
 };
 const defaultDisplayLabels = {
   jp: "日文",
@@ -40,23 +40,35 @@ function isSupportedInput(file) {
 }
 
 function inferInputMode(files) {
-  const extensions = Object.values(files).map((file) => path.extname(file).toLowerCase());
+  const extensions = Object.values(files).filter(Boolean).map((file) => path.extname(file).toLowerCase());
   if (extensions.every((ext) => ext === ".txt")) return "txt";
   if (extensions.every((ext) => ext === ".epub")) return "epub";
   return "document";
 }
 
+function normalizeComparisonMode(value) {
+  return value === "bilingual" ? "bilingual" : "trilingual";
+}
+
 function validateSelection(selection) {
   if (!selection?.files) throw new Error("Input selection is missing files.");
-  for (const lang of langs) {
+  const comparisonMode = normalizeComparisonMode(selection.comparisonMode);
+  const requiredLangs = comparisonMode === "bilingual" ? ["jp", "cn"] : langs;
+  for (const lang of requiredLangs) {
     const file = selection.files[lang];
     if (!file) throw new Error(`Missing ${lang} input file.`);
     if (!fs.existsSync(file)) throw new Error(`Input file does not exist: ${file}`);
     if (!isSupportedInput(file)) throw new Error(`Unsupported input file type: ${file}`);
   }
   return {
+    comparisonMode,
     inputMode: selection.inputMode || inferInputMode(selection.files),
-    files: Object.fromEntries(langs.map((lang) => [lang, path.resolve(selection.files[lang])])),
+    files: Object.fromEntries(langs.map((lang) => [
+      lang,
+      comparisonMode === "bilingual" && lang === "tw"
+        ? ""
+        : (selection.files[lang] ? path.resolve(selection.files[lang]) : ""),
+    ])),
     labels: {
       ...defaultDisplayLabels,
       ...Object.fromEntries(
@@ -105,14 +117,17 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function selectionFromExplicitFiles(source) {
+  const comparisonMode = normalizeComparisonMode(source.comparisonMode || source["comparison-mode"] || process.env.TRANSCOMPARATOR_COMPARISON_MODE);
   const files = {
     jp: normalizePath(source.jp || source["jp-file"] || process.env.TRANSCOMPARATOR_JP_FILE),
     cn: normalizePath(source.cn || source["cn-file"] || process.env.TRANSCOMPARATOR_CN_FILE),
     tw: normalizePath(source.tw || source["tw-file"] || process.env.TRANSCOMPARATOR_TW_FILE),
   };
-  if (!langs.every((lang) => files[lang])) return null;
+  const requiredLangs = comparisonMode === "bilingual" ? ["jp", "cn"] : langs;
+  if (!requiredLangs.every((lang) => files[lang])) return null;
   return validateSelection({
     files,
+    comparisonMode,
     inputMode: source.mode || process.env.TRANSCOMPARATOR_INPUT_MODE || inferInputMode(files),
     startMarkers: startMarkersFromSource(source),
   });
@@ -137,7 +152,7 @@ function supportedFilesInDirectory(dir) {
     .sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
 }
 
-function guessLangOrder(files) {
+function guessLangOrder(files, comparisonMode = "trilingual") {
   const unused = new Set(files);
   const take = (predicate) => {
     for (const file of unused) {
@@ -151,9 +166,10 @@ function guessLangOrder(files) {
   const result = {
     jp: take((name) => /[ぁ-んァ-ヶー]/.test(name)),
     cn: take((name) => /[简简中汉栖这学园诡诈骗权译]/.test(name) || /\bcn\b/i.test(name)),
-    tw: take((name) => /[繁台臺這學園詐騙權譯鎌馬]/.test(name) || /\btw\b/i.test(name)),
+    tw: comparisonMode === "bilingual" ? null : take((name) => /[繁台臺這學園詐騙權譯鎌馬]/.test(name) || /\btw\b/i.test(name)),
   };
-  for (const lang of langs) {
+  const activeLangs = comparisonMode === "bilingual" ? ["jp", "cn"] : langs;
+  for (const lang of activeLangs) {
     if (!result[lang]) {
       const [file] = unused;
       result[lang] = file;
@@ -165,16 +181,19 @@ function guessLangOrder(files) {
 
 function selectionFromDirectory(dir, source = {}) {
   const inputDir = normalizePath(dir);
+  const comparisonMode = normalizeComparisonMode(source.comparisonMode || source["comparison-mode"] || process.env.TRANSCOMPARATOR_COMPARISON_MODE);
   if (!fs.existsSync(inputDir) || !fs.statSync(inputDir).isDirectory()) {
     throw new Error(`Input directory does not exist: ${inputDir}`);
   }
   const files = supportedFilesInDirectory(inputDir);
-  if (files.length < 3) {
-    throw new Error(`Need at least 3 supported files in ${inputDir}; found ${files.length}.`);
+  const minimumFiles = comparisonMode === "bilingual" ? 2 : 3;
+  if (files.length < minimumFiles) {
+    throw new Error(`Need at least ${minimumFiles} supported files in ${inputDir}; found ${files.length}.`);
   }
   return validateSelection({
-    files: guessLangOrder(files),
-    inputMode: source.mode || process.env.TRANSCOMPARATOR_INPUT_MODE || inferInputMode(guessLangOrder(files)),
+    comparisonMode,
+    files: guessLangOrder(files, comparisonMode),
+    inputMode: source.mode || process.env.TRANSCOMPARATOR_INPUT_MODE || inferInputMode(guessLangOrder(files, comparisonMode)),
     startMarkers: startMarkersFromSource(source),
   });
 }
@@ -192,6 +211,7 @@ function selectionFromArgsOrEnv() {
 
 function describeSelection(selection) {
   return langs
+    .filter((lang) => selection.files[lang])
     .map((lang) => `${labels[lang]}(${lang}): ${selection.files[lang]}`)
     .join("\n");
 }
@@ -304,6 +324,7 @@ module.exports = {
   describeSelection,
   defaultDisplayLabels,
   defaultInlineMarkup,
+  normalizeComparisonMode,
   supportedFilesInDirectory,
   validateSelection,
 };

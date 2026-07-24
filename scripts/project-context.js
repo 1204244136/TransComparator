@@ -34,12 +34,14 @@ function normalizeFiles(files = {}) {
 
 function projectSignature(selection = {}) {
   const files = normalizeFiles(selection.files);
-  return shortHash([
+  const identity = [
     ...langs.map((lang) => files[lang]),
     selection.inputMode || "",
     JSON.stringify(selection.startMarkers || {}),
     JSON.stringify(selection.inlineMarkup || {}),
-  ].join("\u001f"));
+  ];
+  if (selection.comparisonMode === "bilingual") identity.splice(3, 0, "bilingual");
+  return shortHash(identity.join("\u001f"));
 }
 
 function createProjectContext(selection = {}, rows = [], options = {}) {
@@ -53,6 +55,7 @@ function createProjectContext(selection = {}, rows = [], options = {}) {
     snapshotKey: rowsSignature,
     rowsSignature,
     generatedAt: options.generatedAt || new Date().toISOString(),
+    comparisonMode: selection.comparisonMode || "trilingual",
     inputMode: selection.inputMode || "",
     files,
     labels: selection.labels || {},

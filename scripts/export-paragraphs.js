@@ -8,7 +8,10 @@ async function main() {
   const selection = await resolveInputSelection({ promptIfSaved: true });
   saveSelection(selection);
 
-  const paragraphs = await loadParagraphs(selection);
+  const paragraphs = {
+    comparisonMode: selection.comparisonMode || "trilingual",
+    ...(await loadParagraphs(selection)),
+  };
   const outFile = path.join(outputDir, "paragraphs.json");
   fs.writeFileSync(outFile, JSON.stringify(paragraphs, null, 2), "utf8");
 

@@ -295,9 +295,11 @@ def align(jp_vecs: np.ndarray, tw_vecs: np.ndarray) -> list[dict]:
 def main() -> None:
     data = json.loads(PARAGRAPHS.read_text(encoding="utf-8"))
     jp = data["jp"]
-    if PIVOT_LANG not in data:
-        raise ValueError(f"Unknown pivot language: {PIVOT_LANG}")
-    pivot = data[PIVOT_LANG]
+    comparison_mode = data.get("comparisonMode", "trilingual")
+    pivot_lang = "cn" if comparison_mode == "bilingual" else PIVOT_LANG
+    if pivot_lang not in data:
+        raise ValueError(f"Unknown pivot language: {pivot_lang}")
+    pivot = data[pivot_lang]
 
     device = select_device()
     print(f"device: {device}")
@@ -310,7 +312,7 @@ def main() -> None:
 
     print("encoding jp")
     jp_vecs = encode(model, jp_texts, device)
-    print(f"encoding {PIVOT_LANG}")
+    print(f"encoding {pivot_lang}")
     pivot_vecs = encode(model, pivot_texts, device)
 
     mapping = align(jp_vecs, pivot_vecs)
@@ -322,7 +324,8 @@ def main() -> None:
         group["pivotEnd"] = group["twEnd"]
     result = {
         "model": MODEL_NAME,
-        "pivotLang": PIVOT_LANG,
+        "pivotLang": pivot_lang,
+        "comparisonMode": comparison_mode,
         "device": device,
         "torchVersion": torch.__version__,
         "torchCudaVersion": torch.version.cuda,
@@ -330,7 +333,7 @@ def main() -> None:
         "acceleratorBackend": torch_backend(),
         "gpu": torch.cuda.get_device_name(0) if device == "cuda" else None,
         "searchWindow": SEARCH_WINDOW,
-        "counts": {"jp": len(jp), PIVOT_LANG: len(pivot)},
+        "counts": {"jp": len(jp), pivot_lang: len(pivot)},
         "mapping": mapping,
         "groups": groups,
     }

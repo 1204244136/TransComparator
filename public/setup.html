@@ -28,6 +28,7 @@
       --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.04);
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     html {
       background: var(--bg);
     }
@@ -103,6 +104,186 @@
     }
     .work-panel {
       padding: 18px;
+    }
+    .scope-panel {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface-subtle);
+    }
+    .scope-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .scope-head h2 {
+      margin: 0;
+    }
+    .scope-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .scope-item {
+      appearance: none;
+      width: 100%;
+      min-width: 0;
+      min-height: 108px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: inherit;
+      font: inherit;
+      height: auto;
+      text-align: left;
+      opacity: 0.68;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      gap: 7px;
+      transition: opacity 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background 140ms ease;
+    }
+    .scope-item:hover {
+      opacity: 0.86;
+      background: var(--surface-subtle);
+    }
+    .scope-item:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--focus) 30%, transparent);
+      outline-offset: 2px;
+    }
+    .scope-item strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .scope-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+      text-wrap: pretty;
+    }
+    .scope-item.trilingual {
+      border-color: #b8cce9;
+      box-shadow: inset 3px 0 0 var(--focus);
+    }
+    .scope-item.bilingual {
+      border-color: #c7d8c9;
+      box-shadow: inset 3px 0 0 var(--ok-strong);
+    }
+    .scope-item.is-selected {
+      opacity: 1;
+      box-shadow: inset 3px 0 0 var(--focus), 0 0 0 1px color-mix(in srgb, var(--focus) 18%, transparent);
+    }
+    .scope-item.bilingual.is-selected {
+      box-shadow: inset 3px 0 0 var(--ok-strong), 0 0 0 1px color-mix(in srgb, var(--ok-strong) 18%, transparent);
+    }
+    .import-panel {
+      padding: 18px;
+    }
+    .import-intro {
+      margin: -2px 0 2px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .import-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .import-card {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface-subtle);
+    }
+    .import-card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .import-card-head strong {
+      font-size: 14px;
+    }
+    .import-card-head small {
+      color: var(--muted-2);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .dropzone {
+      min-height: 116px;
+      height: auto;
+      padding: 12px 10px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--muted);
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 6px;
+      text-align: center;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .dropzone:hover,
+    .dropzone.is-dragover {
+      border-color: var(--focus);
+      background: #f4f8ff;
+      color: var(--focus);
+    }
+    .dropzone.has-file {
+      border-style: solid;
+      border-color: #b8dec5;
+      background: var(--ok);
+      color: var(--ok-strong);
+    }
+    .dropzone strong {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+    .dropzone small {
+      color: var(--muted-2);
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .dropzone.has-file small {
+      color: var(--ok-strong);
+    }
+    .file-remove {
+      width: auto;
+      height: 30px;
+      padding: 0 9px;
+      justify-self: end;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .upload-input {
+      display: none;
+    }
+    .section-kicker {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 1px 7px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--surface-subtle);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
     }
     h2 {
       margin: 0 0 10px;
@@ -222,17 +403,17 @@
       color: var(--muted);
       font-weight: 700;
     }
-    th:nth-child(1), td:nth-child(1) { width: 38%; }
-    th:nth-child(2), td:nth-child(2) { width: 16%; }
-    th:nth-child(3), td:nth-child(3) { width: 34%; }
-    th:nth-child(4), td:nth-child(4) { width: 12%; }
+    th:nth-child(1), td:nth-child(1) { width: 18%; }
+    th:nth-child(2), td:nth-child(2) { width: 54%; }
+    th:nth-child(3), td:nth-child(3) { width: 14%; }
+    th:nth-child(4), td:nth-child(4) { width: 14%; }
     .assignment {
       display: grid;
       gap: 0;
     }
     .slot {
       display: grid;
-      grid-template-columns: 100px 88px minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) 88px;
       gap: 12px;
       padding: 12px;
       border-bottom: 1px solid var(--line);
@@ -329,6 +510,41 @@
       border-color: var(--line);
       line-height: 1.55;
     }
+    .progress-panel {
+      display: grid;
+      gap: 7px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface-subtle);
+    }
+    .progress-meta {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .progress-meta strong {
+      color: var(--text);
+      font-size: 13px;
+    }
+    .progress-track {
+      height: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--line);
+    }
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--focus);
+      transition: width 180ms ease, background-color 180ms ease;
+    }
+    .progress-bar.is-done { background: var(--ok-strong); }
+    .progress-bar.is-failed { background: var(--danger-strong); }
     .run-actions {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -367,6 +583,19 @@
         grid-template-columns: 1fr;
       }
     }
+    @media (max-width: 620px) {
+      .scope-grid {
+        grid-template-columns: 1fr;
+      }
+      .import-grid {
+        grid-template-columns: 1fr;
+      }
+      .scope-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -381,41 +610,77 @@
         <span class="col-hint">扫描目录、分配角色、设定正文范围</span>
       </div>
 
-      <div class="panel stack work-panel">
-        <h2>源文件目录</h2>
-        <div>
-          <label for="inputDir">目录路径</label>
-          <div class="row">
-            <input id="inputDir" type="text" placeholder="例如 C:\Users\you\Desktop\texts">
-            <button id="scanButton" type="button">扫描</button>
+      <div class="scope-panel" aria-label="比较范围说明">
+        <div class="scope-head">
+          <h2>比较范围</h2>
+        </div>
+        <div class="scope-grid">
+          <button id="trilingualScope" class="scope-item trilingual is-selected" type="button" aria-pressed="true">
+            <strong>三语模式</strong>
+            <p>A 为原文；B、C 为同级版本。AI 可选择修改 B 或 C，并参考 A 与另一版本。</p>
+          </button>
+          <button id="bilingualScope" class="scope-item bilingual" type="button" aria-pressed="false">
+            <strong>双语模式</strong>
+            <p>A 为原文，B 为唯一修改列。AI 固定修改 B，并只参考原文 A。</p>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel stack import-panel">
+        <div class="scope-head">
+          <h2>导入文件</h2>
+          <span id="importKicker" class="section-kicker">三语需要 3 个文件</span>
+        </div>
+        <p id="importHint" class="import-intro">分别导入原文 A、非原文 B、非原文 C；支持点击选择，也可以直接拖拽文件。</p>
+        <div class="import-grid">
+          <div id="jpImportCard" class="import-card">
+            <div class="import-card-head"><strong>原文 A</strong><small>必需</small></div>
+            <input id="jpFile" class="upload-input" type="file" accept=".txt,.epub,.docx,.html,.htm,.odt,.md,.markdown,.rtf">
+            <button id="jpDropzone" class="dropzone" type="button" aria-label="导入原文 A"><span>拖拽文件到这里</span><small>或点击选择文件</small></button>
+            <button id="jpRemove" class="file-remove" type="button" hidden>移除文件</button>
+          </div>
+          <div id="cnImportCard" class="import-card">
+            <div class="import-card-head"><strong>非原文 B</strong><small>必需</small></div>
+            <input id="cnFile" class="upload-input" type="file" accept=".txt,.epub,.docx,.html,.htm,.odt,.md,.markdown,.rtf">
+            <button id="cnDropzone" class="dropzone" type="button" aria-label="导入非原文 B"><span>拖拽文件到这里</span><small>或点击选择文件</small></button>
+            <button id="cnRemove" class="file-remove" type="button" hidden>移除文件</button>
+          </div>
+          <div id="twImportCard" class="import-card">
+            <div class="import-card-head"><strong>非原文 C</strong><small>必需</small></div>
+            <input id="twFile" class="upload-input" type="file" accept=".txt,.epub,.docx,.html,.htm,.odt,.md,.markdown,.rtf">
+            <button id="twDropzone" class="dropzone" type="button" aria-label="导入非原文 C"><span>拖拽文件到这里</span><small>或点击选择文件</small></button>
+            <button id="twRemove" class="file-remove" type="button" hidden>移除文件</button>
           </div>
         </div>
-        <div id="status" class="status">输入目录后扫描支持的 TXT、EPUB、DOCX、HTML、ODT、Markdown、RTF 文件。</div>
+        <div id="status" class="status">请先导入所需文件。</div>
       </div>
 
       <div class="panel stack">
-        <h2>角色分配</h2>
+        <div class="scope-head">
+          <h2>角色分配</h2>
+          <span id="roleKicker" class="section-kicker">三语输入 · A + B + C</span>
+        </div>
         <div class="assignment">
           <div class="slot">
             <div>
-              <strong>原文</strong>
+              <strong>原文 A</strong>
+              <small>准入边界 / 对齐基准</small>
             </div>
             <input id="jpLabel" type="text" value="日文" aria-label="原文显示名">
-            <select id="jp"></select>
-          </div>
-          <div class="slot">
-            <div>
-              <strong>非原文 A</strong>
-            </div>
-            <input id="cnLabel" type="text" value="简中" aria-label="非原文 A 显示名">
-            <select id="cn"></select>
           </div>
           <div class="slot">
             <div>
               <strong>非原文 B</strong>
+              <small id="cnRoleHint">可选为 AI 修改列</small>
             </div>
-            <input id="twLabel" type="text" value="台版" aria-label="非原文 B 显示名">
-            <select id="tw"></select>
+            <input id="cnLabel" type="text" value="简中" aria-label="非原文 B 显示名">
+          </div>
+          <div id="twSlot" class="slot">
+            <div>
+              <strong>非原文 C</strong>
+              <small>可选为 AI 修改列</small>
+            </div>
+            <input id="twLabel" type="text" value="台版" aria-label="非原文 C 显示名">
           </div>
           <div class="slot-actions">
             <div class="actions">
@@ -430,15 +695,15 @@
         <summary>正文起始短语（可选）</summary>
         <div class="stack">
           <div>
-            <label for="jpStart">原文起始短语</label>
+            <label for="jpStart">原文 A 起始短语</label>
             <textarea id="jpStart" placeholder="可留空"></textarea>
           </div>
           <div>
-            <label for="cnStart">非原文 A 起始短语</label>
+            <label for="cnStart">非原文 B 起始短语</label>
             <textarea id="cnStart" placeholder="可留空"></textarea>
           </div>
-          <div>
-            <label for="twStart">非原文 B 起始短语</label>
+          <div id="twStartField">
+            <label for="twStart">非原文 C 起始短语</label>
             <textarea id="twStart" placeholder="可留空"></textarea>
           </div>
         </div>
@@ -472,36 +737,45 @@
       </div>
 
       <div class="panel stack">
-        <h2>扫描到的文件</h2>
+        <h2>已导入文件</h2>
         <div class="file-list">
           <table>
             <thead>
               <tr>
+                <th>角色</th>
                 <th>文件名</th>
-                <th>类型</th>
-                <th>路径</th>
+                <th>格式</th>
                 <th>大小</th>
               </tr>
             </thead>
             <tbody id="fileRows">
-              <tr><td colspan="4">尚未扫描目录。</td></tr>
+              <tr><td colspan="4">尚未导入文件。</td></tr>
             </tbody>
           </table>
         </div>
       </div>
       <div class="panel stack">
-        <h2>生成与打开</h2>
-        <div class="subtle">保存输入选择后，直接在这里生成完整工作台。</div>
+        <div class="scope-head">
+          <h2>生成与打开</h2>
+          <span id="generateKicker" class="section-kicker">三语工作台</span>
+        </div>
+        <div id="generateHint" class="subtle">保存 A、B、C 三份输入后生成三语工作台；AI 可修改 B 或 C。</div>
         <div class="run-actions">
           <button id="runButton" class="primary" type="button" disabled>开始生成</button>
           <a id="openOutput" class="button disabled" href="#" target="_blank" rel="noreferrer">打开工作台</a>
         </div>
         <div id="runStatus" class="status">等待保存输入选择。</div>
+        <div class="progress-panel" aria-label="生成进度">
+          <div class="progress-meta"><strong id="progressLabel">等待生成</strong><span id="progressPercent">0%</span></div>
+          <div class="progress-track" role="progressbar" aria-label="生成进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+        </div>
         <div id="log" class="status mono log">生成日志会显示在这里。</div>
       </div>
       <div class="panel stack">
         <h2>后台任务</h2>
-        <div class="subtle">AI 校对的配置和启动在工作台中完成；控制台只显示运行状态并提供紧急终止。</div>
+        <div class="subtle">AI 校对的配置和启动在工作台中完成；修改列和参考范围由当前比较模式决定。控制台只显示运行状态并提供紧急终止。</div>
         <div class="task-actions">
           <div id="aiStatus" class="status">没有后台 AI 任务。</div>
           <a id="openOutputForAi" class="button disabled" href="#" target="_blank" rel="noreferrer">打开工作台</a>
@@ -513,15 +787,25 @@
 
   <script>
     const state = {
-      files: [],
-      guessed: null,
+      roleFiles: { jp: null, cn: null, tw: null },
+      comparisonMode: "trilingual",
       inputMode: "",
       saved: false,
       savedSettingsLoaded: false,
+      uploading: new Set(),
     };
     const ids = {
-      inputDir: document.getElementById("inputDir"),
-      scanButton: document.getElementById("scanButton"),
+      trilingualScope: document.getElementById("trilingualScope"),
+      bilingualScope: document.getElementById("bilingualScope"),
+      roleKicker: document.getElementById("roleKicker"),
+      cnRoleHint: document.getElementById("cnRoleHint"),
+      twSlot: document.getElementById("twSlot"),
+      twStartField: document.getElementById("twStartField"),
+      twImportCard: document.getElementById("twImportCard"),
+      importKicker: document.getElementById("importKicker"),
+      importHint: document.getElementById("importHint"),
+      generateKicker: document.getElementById("generateKicker"),
+      generateHint: document.getElementById("generateHint"),
       status: document.getElementById("status"),
       fileRows: document.getElementById("fileRows"),
       saveButton: document.getElementById("saveButton"),
@@ -530,12 +814,22 @@
       openOutput: document.getElementById("openOutput"),
       openOutputForAi: document.getElementById("openOutputForAi"),
       runStatus: document.getElementById("runStatus"),
+      progressLabel: document.getElementById("progressLabel"),
+      progressPercent: document.getElementById("progressPercent"),
+      progressTrack: document.querySelector(".progress-track"),
+      progressBar: document.getElementById("progressBar"),
       log: document.getElementById("log"),
       aiStatus: document.getElementById("aiStatus"),
       aiStopButton: document.getElementById("aiStopButton"),
-      jp: document.getElementById("jp"),
-      cn: document.getElementById("cn"),
-      tw: document.getElementById("tw"),
+      jpFile: document.getElementById("jpFile"),
+      cnFile: document.getElementById("cnFile"),
+      twFile: document.getElementById("twFile"),
+      jpDropzone: document.getElementById("jpDropzone"),
+      cnDropzone: document.getElementById("cnDropzone"),
+      twDropzone: document.getElementById("twDropzone"),
+      jpRemove: document.getElementById("jpRemove"),
+      cnRemove: document.getElementById("cnRemove"),
+      twRemove: document.getElementById("twRemove"),
       jpLabel: document.getElementById("jpLabel"),
       cnLabel: document.getElementById("cnLabel"),
       twLabel: document.getElementById("twLabel"),
@@ -545,6 +839,8 @@
       preserveRuby: document.getElementById("preserveRuby"),
       preserveBold: document.getElementById("preserveBold"),
     };
+    const roleNames = { jp: "原文 A", cn: "非原文 B", tw: "非原文 C" };
+    const supportedExtensions = new Set(["txt", "epub", "docx", "html", "htm", "odt", "md", "markdown", "rtf"]);
 
     function setStatus(message, type = "") {
       ids.status.className = `status ${type}`.trim();
@@ -562,33 +858,43 @@
       return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
     }
 
-    function option(file) {
-      const item = document.createElement("option");
-      item.value = file.path;
-      item.textContent = file.name;
-      return item;
+    function renderComparisonMode() {
+      const bilingual = state.comparisonMode === "bilingual";
+      ids.trilingualScope.classList.toggle("is-selected", !bilingual);
+      ids.bilingualScope.classList.toggle("is-selected", bilingual);
+      ids.trilingualScope.setAttribute("aria-pressed", String(!bilingual));
+      ids.bilingualScope.setAttribute("aria-pressed", String(bilingual));
+      ids.twSlot.hidden = bilingual;
+      ids.twStartField.hidden = bilingual;
+      ids.twImportCard.hidden = bilingual;
+      ids.importKicker.textContent = bilingual ? "双语需要 2 个文件" : "三语需要 3 个文件";
+      ids.importHint.textContent = bilingual
+        ? "分别导入原文 A 和非原文 B；支持点击选择，也可以直接拖拽文件。"
+        : "分别导入原文 A、非原文 B、非原文 C；支持点击选择，也可以直接拖拽文件。";
+      ids.roleKicker.textContent = bilingual ? "双语输入 · A + B" : "三语输入 · A + B + C";
+      ids.cnRoleHint.textContent = bilingual ? "唯一 AI 修改列" : "可选为 AI 修改列";
+      ids.generateKicker.textContent = bilingual ? "双语工作台" : "三语工作台";
+      ids.generateHint.textContent = bilingual
+        ? "保存 A、B 两份输入后生成双语工作台；AI 固定修改 B，并参考原文 A。"
+        : "保存 A、B、C 三份输入后生成三语工作台；AI 可修改 B 或 C，并参考原文与另一版本。";
     }
 
-    function renderSelectors() {
-      for (const lang of ["jp", "cn", "tw"]) {
-        ids[lang].replaceChildren(...state.files.map(option));
-        if (state.guessed?.[lang]) ids[lang].value = state.guessed[lang];
-      }
-      ids.saveButton.disabled = state.files.length < 3;
-      validateUnique();
+    function importedFiles() {
+      return Object.values(state.roleFiles).filter(Boolean);
     }
 
     function renderFiles() {
-      if (!state.files.length) {
-        ids.fileRows.innerHTML = '<tr><td colspan="4">没有可用文件。</td></tr>';
+      const files = Object.entries(state.roleFiles).filter(([, file]) => file);
+      if (!files.length) {
+        ids.fileRows.innerHTML = '<tr><td colspan="4">尚未导入文件。</td></tr>';
         return;
       }
-      ids.fileRows.replaceChildren(...state.files.map((file) => {
+      ids.fileRows.replaceChildren(...files.map(([role, file]) => {
         const row = document.createElement("tr");
         row.innerHTML = `
+          <td>${escapeHtml(roleNames[role])}</td>
           <td>${escapeHtml(file.name)}</td>
           <td>${escapeHtml(file.ext || "-")}</td>
-          <td class="file-meta">${escapeHtml(file.path)}</td>
           <td>${formatSize(file.size)}</td>
         `;
         return row;
@@ -597,51 +903,114 @@
 
     function selectedFiles() {
       return {
-        jp: ids.jp.value,
-        cn: ids.cn.value,
-        tw: ids.tw.value,
+        jp: state.roleFiles.jp?.path || "",
+        cn: state.roleFiles.cn?.path || "",
+        tw: state.comparisonMode === "bilingual" ? "" : (state.roleFiles.tw?.path || ""),
       };
     }
 
     function validateUnique() {
-      if (!state.files.length) return false;
-      const values = Object.values(selectedFiles()).filter(Boolean);
-      const ok = values.length === 3 && new Set(values).size === 3;
+      const requiredRoles = state.comparisonMode === "bilingual" ? ["jp", "cn"] : ["jp", "cn", "tw"];
+      const values = requiredRoles.map((role) => state.roleFiles[role]?.path).filter(Boolean);
+      const missing = requiredRoles.filter((role) => !state.roleFiles[role]);
+      const ok = missing.length === 0 && new Set(values).size === requiredRoles.length && state.uploading.size === 0;
       ids.saveButton.disabled = !ok;
       ids.runButton.disabled = !state.saved;
-      if (!ok) setStatus("三个角色必须选择不同文件。", "warn");
+      if (!ok && !state.uploading.size) {
+        setStatus(missing.length ? `还需导入：${missing.map((role) => roleNames[role]).join("、")}` : "不同角色不能使用同一个文件。", "warn");
+      }
       return ok;
     }
 
-    async function scan() {
-      const dir = ids.inputDir.value.trim();
-      if (!dir) {
-        setStatus("请输入源文件目录。", "warn");
+    function fileExtension(name) {
+      const match = String(name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+      return match ? match[1] : "";
+    }
+
+    function inputModeForImportedFiles() {
+      const roles = state.comparisonMode === "bilingual" ? ["jp", "cn"] : ["jp", "cn", "tw"];
+      const extensions = roles.map((role) => fileExtension(state.roleFiles[role]?.name || state.roleFiles[role]?.path));
+      if (!extensions.every(Boolean)) return "";
+      if (extensions.every((extension) => extension === "txt")) return "txt";
+      if (extensions.every((extension) => extension === "epub")) return "epub";
+      return "document";
+    }
+
+    function bytesToBase64(bytes) {
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let index = 0; index < bytes.length; index += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(index, Math.min(index + chunkSize, bytes.length)));
+      }
+      return btoa(binary);
+    }
+
+    async function uploadRoleFile(role, file) {
+      if (!file) return;
+      const extension = fileExtension(file.name);
+      if (!supportedExtensions.has(extension)) {
+        setStatus("不支持的文件类型。请选择 TXT、EPUB、DOCX、HTML、ODT、Markdown 或 RTF 文件。", "error");
         return;
       }
-      ids.scanButton.disabled = true;
-      setStatus("正在扫描目录...");
+      if (file.size > 80 * 1024 * 1024) {
+        setStatus("单个文件不能超过 80 MB。", "error");
+        return;
+      }
+
+      state.uploading.add(role);
+      state.saved = false;
+      renderRoleFiles();
+      validateUnique();
+      setStatus(`正在导入${roleNames[role]}：${file.name}...`, "warn");
       try {
-        const response = await fetch(`/api/scan?dir=${encodeURIComponent(dir)}`);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            role,
+            comparisonMode: state.comparisonMode,
+            file: { name: file.name, type: file.type, size: file.size, data: bytesToBase64(bytes) },
+          }),
+        });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
-        state.files = data.files;
-        state.guessed = data.guessed;
-        state.inputMode = data.inputMode;
-        state.saved = false;
-        ids.inputDir.value = data.inputDir;
-        renderFiles();
-        renderSelectors();
-        setStatus(`找到 ${state.files.length} 个支持文件，已按文件名做初步分配。`, "ok");
+        state.roleFiles[role] = data.file;
+        state.inputMode = inputModeForImportedFiles();
+        setStatus(`${roleNames[role]} 已导入：${file.name}`, "ok");
       } catch (error) {
-        state.files = [];
-        state.guessed = null;
-        renderFiles();
-        renderSelectors();
         setStatus(error.message, "error");
       } finally {
-        ids.scanButton.disabled = false;
+        state.uploading.delete(role);
+        renderRoleFiles();
+        renderFiles();
+        validateUnique();
       }
+    }
+
+    function renderRoleFiles() {
+      for (const role of ["jp", "cn", "tw"]) {
+        const file = state.roleFiles[role];
+        const dropzone = ids[`${role}Dropzone`];
+        const remove = ids[`${role}Remove`];
+        const uploading = state.uploading.has(role);
+        dropzone.classList.toggle("has-file", Boolean(file));
+        dropzone.disabled = uploading;
+        dropzone.innerHTML = file
+          ? `<strong>${escapeHtml(file.name)}</strong><small>${formatSize(file.size)} · 已导入</small>`
+          : `<span>${uploading ? "正在导入..." : "拖拽文件到这里"}</span><small>${uploading ? "请稍候" : "或点击选择文件"}</small>`;
+        remove.hidden = !file || uploading;
+      }
+    }
+
+    function removeRoleFile(role) {
+      state.roleFiles[role] = null;
+      ids[`${role}File`].value = "";
+      state.saved = false;
+      renderRoleFiles();
+      renderFiles();
+      validateUnique();
+      setRunStatus("文件已移除，请重新保存。", "warn");
     }
 
     async function save() {
@@ -654,6 +1023,7 @@
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             files: selectedFiles(),
+            comparisonMode: state.comparisonMode,
             inputMode: state.inputMode,
             labels: {
               jp: ids.jpLabel.value,
@@ -685,11 +1055,10 @@
     }
 
     function reset() {
-      state.files = [];
-      state.guessed = null;
+      state.roleFiles = { jp: null, cn: null, tw: null };
+      state.comparisonMode = "trilingual";
       state.inputMode = "";
       state.saved = false;
-      ids.inputDir.value = "";
       ids.jpLabel.value = "日文";
       ids.cnLabel.value = "简中";
       ids.twLabel.value = "台版";
@@ -704,19 +1073,43 @@
       ids.openOutputForAi.classList.add("disabled");
       ids.openOutputForAi.href = "#";
       ids.log.textContent = "生成日志会显示在这里。";
+      updateProgress({ current: 0, total: 2, percent: 0, step: "idle" });
+      for (const role of ["jp", "cn", "tw"]) ids[`${role}File`].value = "";
+      renderComparisonMode();
+      renderRoleFiles();
       renderFiles();
-      renderSelectors();
-      setStatus("输入目录后扫描支持的 TXT、EPUB、DOCX、HTML、ODT、Markdown、RTF 文件。");
+      validateUnique();
+      setStatus("请先导入所需文件。");
       setRunStatus("等待保存输入选择。");
+    }
+
+    function updateProgress(progress = {}) {
+      const percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
+      const labels = {
+        idle: "等待生成",
+        starting: "准备生成",
+        "align:jp": "阶段 1/2：导出段落并完成跨语言对齐",
+        build: "阶段 2/2：构建比较工作台",
+        done: "生成完成",
+        failed: "生成失败",
+      };
+      const label = labels[progress.step] || "正在生成";
+      ids.progressLabel.textContent = label;
+      ids.progressPercent.textContent = `${percent}%`;
+      ids.progressBar.style.width = `${percent}%`;
+      ids.progressBar.classList.toggle("is-done", progress.step === "done");
+      ids.progressBar.classList.toggle("is-failed", progress.step === "failed");
+      ids.progressTrack.setAttribute("aria-valuenow", String(percent));
     }
 
     function renderPipeline(pipeline) {
       if (!pipeline) return;
-      ids.runButton.disabled = Boolean(pipeline.running) || !state.files.length || ids.saveButton.disabled;
       ids.runButton.disabled = Boolean(pipeline.running) || !state.saved;
+      updateProgress(pipeline.progress || { step: pipeline.step });
+      const stickToBottom = ids.log.scrollHeight - ids.log.scrollTop - ids.log.clientHeight <= 24;
       const logs = pipeline.logs?.length ? pipeline.logs.join("\n") : "生成日志会显示在这里。";
       ids.log.textContent = logs;
-      ids.log.scrollTop = ids.log.scrollHeight;
+      if (stickToBottom) ids.log.scrollTop = ids.log.scrollHeight;
       if (pipeline.outputExists && pipeline.outputUrl) {
         ids.openOutput.href = pipeline.outputUrl;
         ids.openOutput.classList.remove("disabled");
@@ -732,11 +1125,21 @@
       }
     }
 
-    function applySavedSelection(saved) {
-      if (!saved || state.savedSettingsLoaded) return;
+    function applySavedSelection(saved, savedFiles = {}) {
+      if (!saved || state.savedSettingsLoaded || importedFiles().length) return;
+      state.comparisonMode = saved.comparisonMode === "bilingual" ? "bilingual" : "trilingual";
+      state.roleFiles = {
+        jp: savedFiles.jp || null,
+        cn: savedFiles.cn || null,
+        tw: savedFiles.tw || null,
+      };
+      state.inputMode = saved.inputMode || "";
+      renderComparisonMode();
+      renderRoleFiles();
+      renderFiles();
       ids.preserveRuby.checked = saved.inlineMarkup?.ruby !== false;
       ids.preserveBold.checked = saved.inlineMarkup?.bold !== false;
-      state.saved = true;
+      state.saved = validateUnique();
       state.savedSettingsLoaded = true;
     }
 
@@ -745,7 +1148,7 @@
         const response = await fetch("/api/status");
         const data = await response.json();
         if (data.ok) {
-          applySavedSelection(data.saved);
+          applySavedSelection(data.saved, data.savedFiles);
           renderPipeline(data.pipeline);
         }
       } catch {
@@ -755,12 +1158,13 @@
     function renderAiStatus(ai) {
       if (!ai) return;
       ids.aiStopButton.disabled = !ai.running;
+      const modeLabel = ai.proofreadMode === "bilingual" ? "双语" : "三语";
       if (ai.running) {
         ids.aiStatus.className = "status warn";
-        ids.aiStatus.textContent = `运行中：${ai.processed}/${ai.total}，已处理 ${ai.handled}，建议 ${ai.suggested}，错误 ${ai.errors}`;
+        ids.aiStatus.textContent = `${modeLabel} AI 运行中：${ai.processed}/${ai.total}，已处理 ${ai.handled}，建议 ${ai.suggested}，错误 ${ai.errors}`;
       } else if (ai.finishedAt) {
         ids.aiStatus.className = ai.errors ? "status warn" : "status ok";
-        ids.aiStatus.textContent = `${ai.stopRequested ? "已终止" : "已完成"}：${ai.processed}/${ai.total}，已处理 ${ai.handled}，建议 ${ai.suggested}，错误 ${ai.errors}`;
+        ids.aiStatus.textContent = `${modeLabel} AI ${ai.stopRequested ? "已终止" : "已完成"}：${ai.processed}/${ai.total}，已处理 ${ai.handled}，建议 ${ai.suggested}，错误 ${ai.errors}`;
       } else {
         ids.aiStatus.className = "status";
         ids.aiStatus.textContent = "没有后台 AI 任务。";
@@ -794,6 +1198,7 @@
     async function runPipeline() {
       ids.runButton.disabled = true;
       setRunStatus("正在启动生成流程...", "warn");
+      updateProgress({ current: 0, total: 2, percent: 0, step: "starting" });
       try {
         const response = await fetch("/api/run", { method: "POST" });
         const data = await response.json();
@@ -812,21 +1217,39 @@
         .replace(/"/g, "&quot;");
     }
 
-    ids.scanButton.addEventListener("click", scan);
     ids.saveButton.addEventListener("click", save);
     ids.resetButton.addEventListener("click", reset);
     ids.runButton.addEventListener("click", runPipeline);
     ids.aiStopButton.addEventListener("click", stopAiProofread);
-    ids.inputDir.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") scan();
-    });
-    for (const lang of ["jp", "cn", "tw"]) {
-      ids[lang].addEventListener("change", () => {
-        state.saved = false;
-        validateUnique();
-        setRunStatus("选择已变更，请先保存。", "warn");
+    for (const role of ["jp", "cn", "tw"]) {
+      const dropzone = ids[`${role}Dropzone`];
+      const input = ids[`${role}File`];
+      dropzone.addEventListener("click", () => input.click());
+      input.addEventListener("change", () => uploadRoleFile(role, input.files?.[0]));
+      dropzone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        dropzone.classList.add("is-dragover");
       });
+      dropzone.addEventListener("dragleave", () => dropzone.classList.remove("is-dragover"));
+      dropzone.addEventListener("drop", (event) => {
+        event.preventDefault();
+        dropzone.classList.remove("is-dragover");
+        uploadRoleFile(role, event.dataTransfer?.files?.[0]);
+      });
+      ids[`${role}Remove`].addEventListener("click", () => removeRoleFile(role));
     }
+    function selectComparisonMode(mode) {
+      const nextMode = mode === "bilingual" ? "bilingual" : "trilingual";
+      if (state.comparisonMode === nextMode) return;
+      state.comparisonMode = nextMode;
+      state.saved = false;
+      renderComparisonMode();
+      validateUnique();
+      setStatus(importedFiles().length ? "比较模式已变更，请确认导入文件后保存。" : "比较模式已变更，请导入所需文件。", "warn");
+      setRunStatus("比较模式已变更，请先保存。", "warn");
+    }
+    ids.trilingualScope.addEventListener("click", () => selectComparisonMode("trilingual"));
+    ids.bilingualScope.addEventListener("click", () => selectComparisonMode("bilingual"));
     for (const lang of ["jp", "cn", "tw"]) {
       ids[`${lang}Label`].addEventListener("input", () => {
         state.saved = false;
@@ -841,6 +1264,10 @@
         setRunStatus("EPUB 标记保留设置已变更，请先保存。", "warn");
       });
     }
+    renderComparisonMode();
+    renderRoleFiles();
+    renderFiles();
+    validateUnique();
     refreshPipeline();
     refreshAiStatus();
     setInterval(refreshPipeline, 1500);

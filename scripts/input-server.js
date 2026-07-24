@@ -1,5 +1,6 @@
 const fs = require("fs");
 const { spawn } = require("child_process");
+const crypto = require("crypto");
 const http = require("http");
 const path = require("path");
 const { StringDecoder } = require("string_decoder");
@@ -7,11 +8,13 @@ const { URL } = require("url");
 const {
   guessLangOrder,
   inferInputMode,
+  normalizeComparisonMode,
   normalizePath,
   saveSelection,
   selectionFile,
   defaultDisplayLabels,
   defaultInlineMarkup,
+  isSupportedInput,
   supportedFilesInDirectory,
   validateSelection,
 } = require("./input-selection");
@@ -28,6 +31,8 @@ const publicDir = path.join(rootDir, "public");
 const defaultPort = Number(process.env.TRANSCOMPARATOR_SETUP_PORT || 4317);
 const host = "127.0.0.1";
 const compareHtmlFile = path.join(rootDir, "out", "translation-compare.html");
+const importedInputsDir = path.join(rootDir, "out", "imported-inputs");
+const maxUploadBytes = 80 * 1024 * 1024;
 
 function resolveNpmCommand() {
   if (process.env.TRANSCOMPARATOR_NPM_CMD) return process.env.TRANSCOMPARATOR_NPM_CMD;
@@ -46,6 +51,7 @@ const npmCommand = resolveNpmCommand();
 const pipeline = {
   running: false,
   step: "idle",
+  progress: { current: 0, total: 2, percent: 0, step: "idle" },
   code: null,
   error: "",
   startedAt: null,
@@ -76,12 +82,14 @@ function sendError(res, status, error) {
   sendJson(res, status, { ok: false, error: error.message || String(error) });
 }
 
-function readJson(req) {
+function readJson(req, maxBytes = 128 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
+    let totalBytes = 0;
     req.on("data", (chunk) => {
       chunks.push(chunk);
-      if (Buffer.concat(chunks).length > 1024 * 1024) {
+      totalBytes += chunk.length;
+      if (totalBytes > maxBytes) {
         reject(new Error("Request body is too large."));
         req.destroy();
       }
@@ -108,20 +116,70 @@ function filePayload(file) {
   };
 }
 
-function scanDirectory(dir) {
+function sanitizeUploadedFilename(name) {
+  const basename = path.basename(String(name || "").replace(/\\/g, "/"));
+  return basename.replace(/[<>:"|?*\u0000-\u001f]/g, "_").trim();
+}
+
+function saveUploadedInput(payload) {
+  const role = ["jp", "cn", "tw"].includes(payload?.role) ? payload.role : "";
+  const mode = normalizeComparisonMode(payload?.comparisonMode);
+  if (!role) throw new Error("上传文件缺少有效角色。");
+  if (mode === "bilingual" && role === "tw") throw new Error("双语模式不接受非原文 C 文件。");
+
+  const uploaded = payload?.file || {};
+  const name = sanitizeUploadedFilename(uploaded.name);
+  if (!name || !isSupportedInput(name)) {
+    throw new Error("不支持的文件类型。请选择 TXT、EPUB、DOCX、HTML、ODT、Markdown 或 RTF 文件。");
+  }
+  const encoded = String(uploaded.data || "").replace(/^data:[^;]+;base64,/, "");
+  if (!encoded || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
+    throw new Error("上传文件数据无效。");
+  }
+
+  const buffer = Buffer.from(encoded, "base64");
+  if (!buffer.length) throw new Error("上传文件为空。");
+  if (buffer.length > maxUploadBytes) throw new Error("单个文件不能超过 80 MB。");
+
+  const uploadDir = path.join(importedInputsDir, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`);
+  fs.mkdirSync(uploadDir, { recursive: true });
+  const target = path.join(uploadDir, `${role}-${name}`);
+  fs.writeFileSync(target, buffer);
+  const file = { ...filePayload(target), name };
+  return {
+    comparisonMode: mode,
+    file,
+    inputMode: inferInputMode({ [role]: target }),
+  };
+}
+
+function savedFilePayloads(saved) {
+  if (!saved?.files) return {};
+  return Object.fromEntries(
+    ["jp", "cn", "tw"]
+      .map((role) => [role, saved.files[role]])
+      .filter(([, file]) => file && fs.existsSync(file))
+      .map(([role, file]) => [role, filePayload(file)]),
+  );
+}
+
+function scanDirectory(dir, comparisonMode = "trilingual") {
   const inputDir = normalizePath(dir);
+  const mode = normalizeComparisonMode(comparisonMode);
   if (!inputDir) throw new Error("请输入源文件目录。");
   if (!fs.existsSync(inputDir) || !fs.statSync(inputDir).isDirectory()) {
     throw new Error(`目录不存在：${inputDir}`);
   }
 
   const files = supportedFilesInDirectory(inputDir);
-  if (files.length < 3) {
-    throw new Error(`至少需要 3 个支持的源文件；当前找到 ${files.length} 个。`);
+  const minimumFiles = mode === "bilingual" ? 2 : 3;
+  if (files.length < minimumFiles) {
+    throw new Error(`至少需要 ${minimumFiles} 个支持的源文件；当前找到 ${files.length} 个。`);
   }
 
-  const guessed = guessLangOrder(files);
+  const guessed = guessLangOrder(files, mode);
   return {
+    comparisonMode: mode,
     inputDir,
     files: files.map(filePayload),
     guessed,
@@ -142,6 +200,7 @@ function saveInputSelection(payload) {
   );
   const selection = validateSelection({
     files,
+    comparisonMode: payload.comparisonMode,
     inputMode: payload.inputMode || inferInputMode(files),
     labels: payload.labels || defaultDisplayLabels,
     startMarkers,
@@ -154,9 +213,10 @@ function saveInputSelection(payload) {
   return { selection, selectionFile };
 }
 
-function runCommand(command, args, step) {
+function runCommand(command, args, step, progress) {
   return new Promise((resolve, reject) => {
     pipeline.step = step;
+    if (progress) pipeline.progress = { ...progress, step };
     pushLog(`> ${[command, ...args].join(" ")}`);
     const spawnOptions = {
       cwd: rootDir,
@@ -201,19 +261,23 @@ function quoteWindowsCommandArg(value) {
 async function runPipeline() {
   pipeline.running = true;
   pipeline.step = "starting";
+  pipeline.progress = { current: 0, total: 2, percent: 0, step: "starting" };
   pipeline.code = null;
   pipeline.error = "";
   pipeline.startedAt = new Date().toISOString();
   pipeline.finishedAt = null;
   pipeline.logs = [];
   try {
-    await runCommand(npmCommand, ["run", "align:jp"], "align:jp");
-    await runCommand(npmCommand, ["run", "build"], "build");
+    await runCommand(npmCommand, ["run", "align:jp"], "align:jp", { current: 0, total: 2, percent: 10 });
+    pipeline.progress = { current: 1, total: 2, percent: 50, step: "build" };
+    await runCommand(npmCommand, ["run", "build"], "build", { current: 1, total: 2, percent: 60 });
     pipeline.step = "done";
+    pipeline.progress = { current: 2, total: 2, percent: 100, step: "done" };
     pipeline.code = 0;
     pushLog(`Done. Output: ${compareHtmlFile}`);
   } catch (error) {
     pipeline.step = "failed";
+    pipeline.progress = { ...pipeline.progress, step: "failed" };
     pipeline.code = 1;
     pipeline.error = error.message || String(error);
     pushLog(pipeline.error);
@@ -227,6 +291,7 @@ function pipelineStatus() {
   return {
     running: pipeline.running,
     step: pipeline.step,
+    progress: pipeline.progress,
     code: pipeline.code,
     error: pipeline.error,
     startedAt: pipeline.startedAt,
@@ -276,18 +341,24 @@ async function handleApi(req, res, pathname, searchParams) {
       const saved = fs.existsSync(selectionFile)
         ? JSON.parse(fs.readFileSync(selectionFile, "utf8"))
         : null;
-      sendJson(res, 200, { ok: true, selectionFile, saved, pipeline: pipelineStatus() });
+      sendJson(res, 200, { ok: true, selectionFile, saved, savedFiles: savedFilePayloads(saved), pipeline: pipelineStatus() });
       return;
     }
 
     if (req.method === "GET" && pathname === "/api/scan") {
-      sendJson(res, 200, { ok: true, ...scanDirectory(searchParams.get("dir")) });
+      sendJson(res, 200, { ok: true, ...scanDirectory(searchParams.get("dir"), searchParams.get("mode")) });
       return;
     }
 
     if (req.method === "POST" && pathname === "/api/selection") {
       const payload = await readJson(req);
       sendJson(res, 200, { ok: true, ...saveInputSelection(payload) });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/upload") {
+      const payload = await readJson(req);
+      sendJson(res, 200, { ok: true, ...saveUploadedInput(payload) });
       return;
     }
 
@@ -379,4 +450,5 @@ if (require.main === module) {
 module.exports = {
   createServer,
   host,
+  saveUploadedInput,
 };

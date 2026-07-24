@@ -251,9 +251,13 @@ async function loadParagraphs(selection) {
   const files = selection?.files;
   if (!files) throw new Error("loadParagraphs requires an input selection.");
   const inputMode = selection.inputMode || "document";
+  const comparisonMode = selection.comparisonMode === "bilingual" ? "bilingual" : "trilingual";
   const markers = selection.startMarkers || {};
+  const tw = comparisonMode === "bilingual"
+    ? []
+    : splitParagraphs(sliceMainForInput(await readSelectedInputText(files.tw, selection), "tw", inputMode, markers), "tw");
   return {
-    tw: splitParagraphs(sliceMainForInput(await readSelectedInputText(files.tw, selection), "tw", inputMode, markers), "tw"),
+    tw,
     cn: splitParagraphs(sliceMainForInput(await readSelectedInputText(files.cn, selection), "cn", inputMode, markers), "cn"),
     jp: splitParagraphs(sliceMainForInput(await readSelectedInputText(files.jp, selection), "jp", inputMode, markers), "jp"),
   };
