@@ -837,6 +837,7 @@
       activeProjectKey: "",
       switchingProject: false,
       pipelineRunning: false,
+      serverApiVersion: 0,
     };
     const ids = {
       trilingualScope: document.getElementById("trilingualScope"),
@@ -955,6 +956,30 @@
       updateProjectSelection();
     }
 
+    function upsertCompletedProject(project) {
+      if (!project?.id) return;
+      const projects = [
+        { ...project, active: true, outputUrl: project.outputUrl || "/output/translation-compare.html" },
+        ...state.projects
+          .filter((item) => item.id !== project.id)
+          .map((item) => ({ ...item, active: false, outputUrl: "" })),
+      ];
+      renderProjects(projects, project.id);
+    }
+
+    function showServerVersionMismatch() {
+      state.serverApiVersion = 0;
+      state.projects = [];
+      state.activeProjectKey = "";
+      ids.projectCount.textContent = "需要重启";
+      ids.projectSelect.disabled = true;
+      ids.projectSelect.replaceChildren(new Option("本地服务版本过旧", ""));
+      ids.switchProjectButton.disabled = true;
+      ids.projectSummary.textContent = "页面已更新，但本地服务仍是旧版本。请停止后重新运行 npm run setup。";
+      ids.runButton.disabled = true;
+      setRunStatus("请重启本地控制台服务后再生成，旧服务不会保存项目快照。", "error");
+    }
+
     function setOutputUrl(url) {
       for (const link of [ids.openOutput, ids.openOutputForAi]) {
         link.href = url || "#";
@@ -1019,7 +1044,7 @@
       const missing = requiredRoles.filter((role) => !state.roleFiles[role]);
       const ok = missing.length === 0 && new Set(values).size === requiredRoles.length && state.uploading.size === 0;
       ids.saveButton.disabled = !ok;
-      ids.runButton.disabled = !state.saved;
+      ids.runButton.disabled = !state.saved || state.serverApiVersion < 2;
       if (!ok && !state.uploading.size) {
         setStatus(missing.length ? `还需导入：${missing.map((role) => roleNames[role]).join("、")}` : "不同角色不能使用同一个文件。", "warn");
       }
@@ -1214,7 +1239,10 @@
     function renderPipeline(pipeline) {
       if (!pipeline) return;
       state.pipelineRunning = Boolean(pipeline.running);
-      ids.runButton.disabled = Boolean(pipeline.running) || !state.saved;
+      if (pipeline.step === "done" && pipeline.completedProject) {
+        upsertCompletedProject(pipeline.completedProject);
+      }
+      ids.runButton.disabled = Boolean(pipeline.running) || !state.saved || state.serverApiVersion < 2;
       updateProjectSelection();
       updateProgress(pipeline.progress || { step: pipeline.step });
       const stickToBottom = ids.log.scrollHeight - ids.log.scrollTop - ids.log.clientHeight <= 24;
@@ -1262,9 +1290,14 @@
         const response = await fetch("/api/status");
         const data = await response.json();
         if (data.ok) {
+          state.serverApiVersion = Number(data.apiVersion) || 0;
           applySavedSelection(data.saved, data.savedFiles);
-          renderProjects(data.projects, data.activeProjectKey);
           renderPipeline(data.pipeline);
+          if (state.serverApiVersion >= 2 && Array.isArray(data.projects)) {
+            renderProjects(data.projects, data.activeProjectKey);
+          } else {
+            showServerVersionMismatch();
+          }
         }
       } catch {
       }
@@ -1311,6 +1344,10 @@
     }
 
     async function runPipeline() {
+      if (state.serverApiVersion < 2) {
+        showServerVersionMismatch();
+        return;
+      }
       ids.runButton.disabled = true;
       setRunStatus("正在启动生成流程...", "warn");
       updateProgress({ current: 0, total: 2, percent: 0, step: "starting" });
@@ -1318,6 +1355,7 @@
         const response = await fetch("/api/run", { method: "POST" });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
+        state.serverApiVersion = Number(data.apiVersion) || state.serverApiVersion;
         renderPipeline(data.pipeline);
       } catch (error) {
         setRunStatus(error.message, "error");

@@ -39,6 +39,7 @@ const compareHtmlFile = path.join(rootDir, "out", "translation-compare.html");
 const importedInputsDir = path.join(rootDir, "out", "imported-inputs");
 const maxUploadBytes = 80 * 1024 * 1024;
 const progressPrefix = "@@transcomparator-progress@@";
+const consoleApiVersion = 2;
 
 function resolveNpmCommand() {
   if (process.env.TRANSCOMPARATOR_NPM_CMD) return process.env.TRANSCOMPARATOR_NPM_CMD;
@@ -62,6 +63,7 @@ const pipeline = {
   error: "",
   startedAt: null,
   finishedAt: null,
+  completedProject: null,
   logs: [],
 };
 
@@ -337,6 +339,7 @@ async function runPipeline() {
   pipeline.error = "";
   pipeline.startedAt = new Date().toISOString();
   pipeline.finishedAt = null;
+  pipeline.completedProject = null;
   pipeline.logs = [];
   try {
     await runCommand(npmCommand, ["run", "align:jp"], "align:jp", {
@@ -351,6 +354,7 @@ async function runPipeline() {
     });
     pipeline.progress = { current: 0, total: 0, percent: 99, step: "archive", detail: "归档项目快照" };
     const project = archiveCurrentProject();
+    pipeline.completedProject = project;
     pipeline.step = "done";
     pipeline.progress = { current: 2, total: 2, percent: 100, step: "done" };
     pipeline.code = 0;
@@ -377,6 +381,7 @@ function pipelineStatus() {
     error: pipeline.error,
     startedAt: pipeline.startedAt,
     finishedAt: pipeline.finishedAt,
+    completedProject: pipeline.completedProject,
     logs: pipeline.logs,
     outputExists: fs.existsSync(compareHtmlFile),
     outputUrl: fs.existsSync(compareHtmlFile) ? "/output/translation-compare.html" : "",
@@ -390,6 +395,7 @@ function markProjectReady(project) {
   pipeline.error = "";
   pipeline.startedAt = null;
   pipeline.finishedAt = new Date().toISOString();
+  pipeline.completedProject = null;
   pipeline.logs = [`已切换项目：${project.name}`];
 }
 
@@ -434,6 +440,7 @@ async function handleApi(req, res, pathname, searchParams) {
         : null;
       sendJson(res, 200, {
         ok: true,
+        apiVersion: consoleApiVersion,
         selectionFile,
         saved,
         savedFiles: savedFilePayloads(saved),
@@ -444,7 +451,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     if (req.method === "GET" && pathname === "/api/projects") {
-      sendJson(res, 200, { ok: true, ...listProjects() });
+      sendJson(res, 200, { ok: true, apiVersion: consoleApiVersion, ...listProjects() });
       return;
     }
 
@@ -464,6 +471,7 @@ async function handleApi(req, res, pathname, searchParams) {
       markProjectReady(project);
       sendJson(res, 200, {
         ok: true,
+        apiVersion: consoleApiVersion,
         project,
         saved,
         savedFiles: savedFilePayloads(saved),
@@ -505,7 +513,7 @@ async function handleApi(req, res, pathname, searchParams) {
       }
       clearProofreadCache();
       runPipeline();
-      sendJson(res, 202, { ok: true, pipeline: pipelineStatus() });
+      sendJson(res, 202, { ok: true, apiVersion: consoleApiVersion, pipeline: pipelineStatus() });
       return;
     }
 

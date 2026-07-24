@@ -3,7 +3,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
-const { mapCommandProgress, parseProgressMessage, saveUploadedInput } = require("./input-server");
+const {
+  createServer,
+  host,
+  mapCommandProgress,
+  parseProgressMessage,
+  saveUploadedInput,
+} = require("./input-server");
 
 function uploadPayload(role, name, text, comparisonMode = "bilingual") {
   return {
@@ -68,4 +74,23 @@ test("command progress maps local work into its global pipeline range", () => {
       detail: "编码原文向量",
     },
   );
+});
+
+test("status exposes the project API version and completed project slot", async () => {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, host, resolve);
+  });
+  try {
+    const address = server.address();
+    const response = await fetch(`http://${host}:${address.port}/api/status`);
+    const data = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(data.apiVersion, 2);
+    assert.ok(Array.isArray(data.projects));
+    assert.ok(Object.hasOwn(data.pipeline, "completedProject"));
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 });
