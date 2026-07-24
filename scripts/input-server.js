@@ -518,7 +518,15 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     if (req.method === "GET" && pathname === "/api/ai-proofread/status") {
-      sendJson(res, 200, { ok: true, ai: aiProofreadStatus() });
+      sendJson(res, 200, {
+        ok: true,
+        ai: aiProofreadStatus({
+          runId: searchParams.get("runId") || "",
+          afterRevision: searchParams.get("afterRevision") || 0,
+          knownRequestIds: searchParams.getAll("knownRequestId"),
+          includeLogs: searchParams.get("compact") !== "1",
+        }),
+      });
       return;
     }
 

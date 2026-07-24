@@ -86,6 +86,12 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   const globalConfigWriter = script.match(/function saveAiConfig\(\)[\s\S]*?function saveAiPrompt/)[0];
   assert.doesNotMatch(globalConfigWriter, /systemPrompt: aiIds\.prompt\.value/);
   assert.match(script, /localStorage\.setItem\(aiPromptStorageKey/);
+  assert.match(script, /afterRevision/);
+  assert.match(script, /knownRequestId/);
+  assert.match(script, /aiRequestCache/);
+  assert.match(script, /aiStatusRefreshInFlight/);
+  assert.match(script, /pendingResults\.length[\s\S]*?saveNotes\(\)[\s\S]*?updateDoneCount\(\)/);
+  assert.match(script, /function writeNote\([^)]*\{ deferCommit = false \}/);
   assert.doesNotThrow(() => new Function(script));
 });
 

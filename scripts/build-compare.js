@@ -2111,6 +2111,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const automatedNoteMarkers = ["[AI校对]", "[规则预筛]", "[相似度预筛]"];
     const allRows = JSON.parse(document.getElementById("rowData").textContent);
     const rowsById = new Map(allRows.map((row) => [String(row.index), row]));
+    const renderedRowsById = new Map();
     const currentRawNotes = readStoredNotes(storageKey);
     const notes = {};
     for (const [id, value] of Object.entries(currentRawNotes)) {
@@ -2170,6 +2171,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     };
     const appliedAiResults = new Set();
     const aiActiveIds = new Set();
+    const aiRequestCache = new Map();
     const clearedAiRunIds = new Set();
     const manualNoteOpenIds = new Set();
     const selectedRevisionIds = new Set();
@@ -2178,6 +2180,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     let currentPage = 1;
     let activeRowId = "";
     let lastAiRunId = "";
+    let lastAiResultRevision = 0;
+    let aiMonitorRenderKey = "";
+    let aiStatusRefreshInFlight = false;
     let filterTimer = 0;
     let severityFilter = "all";
     let aiResultFilter = "all";
@@ -2452,6 +2457,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       appliedAiResults.clear();
       aiActiveIds.clear();
       activeRowId = "";
+      lastAiRunId = "";
+      lastAiResultRevision = 0;
+      aiMonitorRenderKey = "";
+      aiRequestCache.clear();
       aiIds.progress.style.width = "0%";
       aiIds.progressWrap.hidden = true;
       aiIds.monitorState.textContent = "尚未启动";
@@ -2469,6 +2478,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.progressWrap.hidden = true;
       aiIds.monitorState.textContent = "尚未启动";
       aiIds.requestList.innerHTML = '<div class="ai-request-empty">启动 AI 校对后，这里会显示程序发给模型的问题和接口等待状态。</div>';
+      aiMonitorRenderKey = "";
       aiActiveIds.clear();
       updateRenderedAiActive();
     }
@@ -2945,7 +2955,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     }
 
     function renderedRow(id) {
-      return tbody.querySelector('[data-index="' + CSS.escape(String(id)) + '"]');
+      return renderedRowsById.get(String(id)) || null;
     }
 
     function updateDoneCount() {
@@ -2992,6 +3002,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const start = (currentPage - 1) * size;
       const slice = filteredRows.slice(start, start + size);
       tbody.innerHTML = slice.map(renderRow).join("");
+      renderedRowsById.clear();
+      for (const row of tbody.querySelectorAll("tr[data-index]")) renderedRowsById.set(row.dataset.index, row);
       syncVisibleRowLayout();
       updateDoneCount();
       updatePaginationStatus();
@@ -3003,7 +3015,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
     }
 
-    function writeNote(id, note, aiDone) {
+    function writeNote(id, note, aiDone, { deferCommit = false } = {}) {
       const current = notes[id] || { note: "", done: false };
       current.aiDone = Boolean(aiDone || current.aiDone || hasAutomatedDecisionNote(note));
       current.done = Boolean(current.manualDone);
@@ -3017,7 +3029,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
       notes[id] = current;
       pruneEmptyNote(id);
-      const textarea = tbody.querySelector('[data-note="' + CSS.escape(id) + '"]');
+      const rendered = renderedRow(id);
+      const textarea = rendered?.querySelector('[data-note]');
       if (textarea) {
         textarea.value = visibleManualNote(notes[id]);
         syncNoteEditorHeight(textarea);
@@ -3028,22 +3041,24 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           summary.replaceWith(wrapper.firstElementChild);
         }
       }
-      const checkbox = tbody.querySelector('[data-done="' + CSS.escape(id) + '"]');
+      const checkbox = rendered?.querySelector('[data-done]');
       if (checkbox) {
         checkbox.checked = Boolean(notes[id]?.manualDone);
         checkbox.closest("tr").classList.toggle("done", checkbox.checked);
       }
-      const aiBadge = tbody.querySelector('[data-ai-done="' + CSS.escape(id) + '"]');
+      const aiBadge = rendered?.querySelector('[data-ai-done]');
       if (aiBadge) {
         const state = aiBadgeState(notes[id]);
         aiBadge.className = "ai-confirm-badge " + state.cls;
         aiBadge.textContent = state.text;
       }
-      const diffSlot = tbody.querySelector('[data-diff-slot="' + CSS.escape(id) + '"]');
+      const diffSlot = rendered?.querySelector('[data-diff-slot]');
       const row = rowsById.get(id);
       if (diffSlot && row) diffSlot.innerHTML = renderDiffBlock(row, notes[id]?.note || "");
-      saveNotes();
-      updateDoneCount();
+      if (!deferCommit) {
+        saveNotes();
+        updateDoneCount();
+      }
     }
 
     async function copyText(text) {
@@ -3261,6 +3276,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       if (!aiIds.monitorEnabled.checked) {
         aiIds.monitorState.textContent = "未启用";
         aiIds.requestList.innerHTML = "";
+        aiMonitorRenderKey = "";
       }
       saveAiConfig();
       syncVisibleRowLayout();
@@ -3473,11 +3489,23 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.monitorSection.hidden = !enabled;
       if (!enabled) {
         aiIds.monitorState.textContent = "未启用";
-        aiIds.requestList.innerHTML = "";
+        if (aiMonitorRenderKey) aiIds.requestList.innerHTML = "";
+        aiMonitorRenderKey = "";
+        aiRequestCache.clear();
         return;
       }
-      const active = ai.activeRequests || [];
-      const recent = ai.recentRequests || [];
+      const hydrateRequest = (request) => {
+        const id = String(request.id || "");
+        const hydrated = { ...(aiRequestCache.get(id) || {}), ...request };
+        if (id) aiRequestCache.set(id, hydrated);
+        return hydrated;
+      };
+      const active = (ai.activeRequests || []).map(hydrateRequest);
+      const recent = (ai.recentRequests || []).map(hydrateRequest);
+      const retainedIds = new Set([...active, ...recent].map((request) => String(request.id || "")));
+      for (const id of aiRequestCache.keys()) {
+        if (!retainedIds.has(id)) aiRequestCache.delete(id);
+      }
       const items = [...active, ...recent].slice(0, 10);
       const sharedSystemMessage = findSharedSystemMessage(items);
       if (active.length) {
@@ -3491,13 +3519,33 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         aiIds.monitorState.textContent = ai.running ? "正在准备请求" : "尚未启动";
       }
       if (!items.length) {
-        aiIds.requestList.innerHTML = '<div class="ai-request-empty">启动 AI 校对后，这里会显示程序发给模型的问题和接口等待状态。</div>';
+        const emptyKey = "empty:" + String(ai.running);
+        if (aiMonitorRenderKey !== emptyKey) {
+          aiIds.requestList.innerHTML = '<div class="ai-request-empty">启动 AI 校对后，这里会显示程序发给模型的问题和接口等待状态。</div>';
+          aiMonitorRenderKey = emptyKey;
+        }
+        return;
+      }
+      const renderKey = JSON.stringify(items.map((request) => [
+        request.id,
+        request.state,
+        request.finishedAt,
+        request.responsePreview,
+        request.error,
+      ]));
+      if (aiMonitorRenderKey === renderKey) {
+        for (const request of items) {
+          const item = aiIds.requestList.querySelector('[data-request-id="' + CSS.escape(String(request.id)) + '"]');
+          const time = item?.querySelector(".ai-request-time");
+          if (time) time.textContent = formatDuration(request.elapsedMs);
+        }
         return;
       }
       aiIds.requestList.innerHTML = [
         renderSharedSystemMessage(sharedSystemMessage),
         ...items.map((request, index) => renderAiRequest(request, index === 0)),
       ].filter(Boolean).join("");
+      aiMonitorRenderKey = renderKey;
       bindDetailsToggle(aiIds.requestList);
     }
 
@@ -3541,7 +3589,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const error = request.error
         ? '<div class="ai-response-preview">' + escapeHtml(request.error) + '</div>'
         : "";
-      return '<details class="' + classes + '"' + (open ? " open" : "") + '>' +
+      return '<details class="' + classes + '" data-request-id="' + escapeHtml(request.id || "") + '"' + (open ? " open" : "") + '>' +
         '<summary class="ai-request-summary">' +
           '<div class="ai-request-main">' +
             '<span class="ai-request-pill">' + escapeHtml(state) + '</span>' +
@@ -3559,6 +3607,12 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     function renderAiStatus(ai) {
       if (!ai) return;
       const aiRunId = ai.runId || "";
+      if (aiRunId && lastAiRunId && aiRunId !== lastAiRunId) {
+        appliedAiResults.clear();
+        lastAiResultRevision = 0;
+        aiMonitorRenderKey = "";
+        aiRequestCache.clear();
+      }
       if (aiRunId) lastAiRunId = aiRunId;
       const sameAiScope = Boolean(
         ai.projectKey &&
@@ -3619,9 +3673,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       if (previousActive !== nextActive) updateRenderedAiActive();
       let appliedResult = false;
       let skippedStaleResults = 0;
+      const pendingResults = [];
       if (sameAiScope) {
         for (const result of ai.results || []) {
-          const key = result.runId + ":" + result.index + ":" + result.status;
+          const key = result.runId + ":" + result.index + ":" + (result.resultRevision || result.status);
           if (appliedAiResults.has(key)) continue;
           appliedAiResults.add(key);
           const currentRow = rowsById.get(String(result.index));
@@ -3630,7 +3685,14 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             continue;
           }
           appliedResult = true;
-          writeNote(String(result.index), result.note || "", Boolean(result.done));
+          pendingResults.push(result);
+        }
+        for (const result of pendingResults) {
+          writeNote(String(result.index), result.note || "", Boolean(result.done), { deferCommit: true });
+        }
+        if (pendingResults.length) {
+          saveNotes();
+          updateDoneCount();
         }
         if (skippedStaleResults && !isStatusMessageLocked()) {
           setRuntimeStatus("已跳过 " + skippedStaleResults + " 条与当前工作台行内容不匹配的自动结果。");
@@ -3638,19 +3700,30 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       } else if ((ai.results || []).length && !ai.running && !isStatusMessageLocked()) {
         setRuntimeStatus("已忽略非当前项目快照的自动结果；当前项目备注保持独立。");
       }
+      lastAiResultRevision = Math.max(lastAiResultRevision, Number(ai.resultRevision) || 0);
       if (appliedResult && (query.value.trim() || notesOnly || doneMode !== "all" || aiResultFilter !== "all" || issueSeverityFilter !== "all")) {
         applyFilters({ reset: false });
       }
     }
 
     async function refreshAiStatus() {
+      if (aiStatusRefreshInFlight) return;
+      aiStatusRefreshInFlight = true;
       try {
-        const response = await fetch("/api/ai-proofread/status");
+        const params = new URLSearchParams({ compact: "1" });
+        if (lastAiRunId) {
+          params.set("runId", lastAiRunId);
+          params.set("afterRevision", String(lastAiResultRevision));
+          for (const id of aiRequestCache.keys()) params.append("knownRequestId", id);
+        }
+        const response = await fetch("/api/ai-proofread/status?" + params);
         const data = await response.json();
         if (data.ok) renderAiStatus(data.ai);
       } catch {
         if (aiIds.status.dataset.cacheCleared) return;
         if (!isStatusMessageLocked()) setRuntimeStatus("未连接到本地控制台服务，AI 校对需要通过 npm run setup 打开工作台。");
+      } finally {
+        aiStatusRefreshInFlight = false;
       }
     }
 
@@ -3793,6 +3866,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       if (!monitorEnabled) {
         aiIds.monitorState.textContent = "未启用";
         aiIds.requestList.innerHTML = "";
+        aiMonitorRenderKey = "";
       }
       setRuntimeStatus("正在启动 AI 校对...");
       try {

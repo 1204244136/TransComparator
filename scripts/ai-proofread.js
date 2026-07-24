@@ -127,6 +127,8 @@ const status = {
   error: "",
   logs: [],
   results: new Map(),
+  resultChanges: [],
+  resultRevision: 0,
 };
 
 let controllers = new Set();
@@ -142,7 +144,10 @@ function pushLog(line) {
   }
 }
 
-function clientStatus() {
+function clientStatus(options = {}) {
+  const sameRun = Boolean(options.runId) && options.runId === status.runId;
+  const afterRevision = sameRun ? clampInteger(options.afterRevision, 0, Number.MAX_SAFE_INTEGER, 0) : 0;
+  const knownRequestIds = new Set(Array.isArray(options.knownRequestIds) ? options.knownRequestIds : []);
   return {
     running: status.running,
     stopRequested: status.stopRequested,
@@ -170,11 +175,14 @@ function clientStatus() {
     suggested: status.suggested,
     errors: status.errors,
     active: status.active,
-    activeRequests: withElapsed(status.activeRequests),
-    recentRequests: status.recentRequests,
+    activeRequests: withElapsed(status.activeRequests).map((request) => requestForClient(request, knownRequestIds)),
+    recentRequests: status.recentRequests.map((request) => requestForClient(request, knownRequestIds)),
     error: status.error,
-    logs: status.logs,
-    results: Array.from(status.results.values()).sort((a, b) => a.index - b.index),
+    logs: options.includeLogs === false ? [] : status.logs,
+    results: afterRevision
+      ? status.resultChanges.slice(afterRevision)
+      : Array.from(status.results.values()).sort((a, b) => a.index - b.index),
+    resultRevision: status.resultRevision,
     providerDefaults,
     proofreadPrompt: proofreadPromptFor(status.proofreadMode),
   };
@@ -288,6 +296,8 @@ function resetStatus(config, rowsLength) {
   status.error = "";
   status.logs = [];
   status.results = new Map();
+  status.resultChanges = [];
+  status.resultRevision = 0;
   controllers = new Set();
 }
 
@@ -316,8 +326,17 @@ function makePrefilterResult(row, labels, classification, comparisonMode = "tril
   };
 }
 
+function requestForClient(request, knownRequestIds) {
+  if (!knownRequestIds.has(request.id)) return request;
+  const { messages, ...summary } = request;
+  return summary;
+}
+
 function addResult(result, { prefilterKind = "" } = {}) {
-  status.results.set(result.index, result);
+  status.resultRevision += 1;
+  const storedResult = { ...result, resultRevision: status.resultRevision };
+  status.results.set(result.index, storedResult);
+  status.resultChanges.push(storedResult);
   status.processed += 1;
   if (result.done) status.handled += 1;
   if (prefilterKind) {
@@ -504,6 +523,8 @@ function clearProofreadCache() {
   status.error = "";
   status.logs = [];
   status.results = new Map();
+  status.resultChanges = [];
+  status.resultRevision = 0;
   controllers = new Set();
   return clientStatus();
 }

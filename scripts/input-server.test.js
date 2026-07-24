@@ -94,3 +94,23 @@ test("status exposes the project API version and completed project slot", async 
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
+
+test("AI status supports compact incremental polling", async () => {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, host, resolve);
+  });
+  try {
+    const address = server.address();
+    const response = await fetch(`http://${host}:${address.port}/api/ai-proofread/status?compact=1&runId=unknown&afterRevision=12`);
+    const data = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(data.ok, true);
+    assert.deepEqual(data.ai.logs, []);
+    assert.ok(Array.isArray(data.ai.results));
+    assert.equal(Number.isInteger(data.ai.resultRevision), true);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
