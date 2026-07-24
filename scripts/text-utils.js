@@ -3,8 +3,9 @@ const path = require("path");
 const OpenCC = require("opencc-js");
 const { readEpubText } = require("./epub-utils");
 const { formatForFile, readWithPandoc } = require("./pandoc-utils");
+const { resolveBuildOutputDir } = require("./storage-layout");
 
-const outputDir = path.join(__dirname, "..", "out");
+const outputDir = resolveBuildOutputDir();
 
 const startMarkers = {
   tw: "",

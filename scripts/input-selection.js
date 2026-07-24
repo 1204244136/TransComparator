@@ -3,9 +3,10 @@ const os = require("os");
 const path = require("path");
 const readline = require("readline/promises");
 const { formatForFile } = require("./pandoc-utils");
+const { resolveBuildOutputDir, resolveSelectionFile } = require("./storage-layout");
 
-const outputDir = path.join(__dirname, "..", "out");
-const selectionFile = path.join(outputDir, "input-selection.json");
+const outputDir = resolveBuildOutputDir();
+const selectionFile = resolveSelectionFile();
 const langs = ["jp", "cn", "tw"];
 const labels = {
   jp: "原文 A",
@@ -95,7 +96,7 @@ function loadSavedSelection() {
 }
 
 function saveSelection(selection) {
-  fs.mkdirSync(outputDir, { recursive: true });
+  fs.mkdirSync(path.dirname(selectionFile), { recursive: true });
   fs.writeFileSync(selectionFile, JSON.stringify(validateSelection(selection), null, 2), "utf8");
 }
 

@@ -15,6 +15,8 @@ async function main() {
   reportProgress(1, "读取输入配置");
   const selection = await resolveInputSelection({ promptIfSaved: true });
   saveSelection(selection);
+  const snapshotSelectionFile = path.join(outputDir, "input-selection.json");
+  fs.writeFileSync(snapshotSelectionFile, JSON.stringify(selection, null, 2), "utf8");
 
   reportProgress(3, "转换并清理源文本");
   const paragraphs = {

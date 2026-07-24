@@ -4,6 +4,7 @@ const { outputDir, toCn, loadParagraphs } = require("./text-utils");
 const { resolveInputSelection } = require("./input-selection");
 const { providerDefaults, proofreadPromptFor } = require("./ai-proofread");
 const { createProjectContext, rowSignature } = require("./project-context");
+const { publishProject } = require("./project-store");
 
 const progressPrefix = "@@transcomparator-progress@@";
 
@@ -780,8 +781,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       z-index: 5;
       padding: 12px 18px 11px;
       border-bottom: 1px solid var(--line);
-      background: rgba(245, 247, 250, 0.97);
-      backdrop-filter: blur(8px);
+      background: #f5f7fa;
     }
     .topbar {
       display: grid;
@@ -2183,6 +2183,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     let lastAiResultRevision = 0;
     let aiMonitorRenderKey = "";
     let aiStatusRefreshInFlight = false;
+    let aiCatchupTimer = 0;
+    let notesSavePending = false;
+    let notesSaveHandle = 0;
+    let notesSaveHandleType = "";
     let filterTimer = 0;
     let severityFilter = "all";
     let aiResultFilter = "all";
@@ -2205,19 +2209,49 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
     }
 
-    function saveNotes() {
-      for (const item of Object.values(notes)) {
-        if (item) {
-          if (isAiFailureNote(item.note)) {
-            item.aiDone = false;
-            item.manualDone = false;
-          } else {
-            item.aiDone = Boolean(item.aiDone || hasAutomatedDecisionNote(item.note));
-          }
-          item.done = Boolean(item.manualDone);
-        }
-      }
+    function persistNotes() {
       localStorage.setItem(storageKey, JSON.stringify(notes));
+    }
+
+    function cancelScheduledNotesSave() {
+      if (!notesSavePending) return;
+      if (notesSaveHandleType === "idle" && window.cancelIdleCallback) {
+        window.cancelIdleCallback(notesSaveHandle);
+      } else {
+        window.clearTimeout(notesSaveHandle);
+      }
+      notesSavePending = false;
+      notesSaveHandle = 0;
+      notesSaveHandleType = "";
+    }
+
+    function flushNotes() {
+      if (!notesSavePending) return;
+      cancelScheduledNotesSave();
+      persistNotes();
+    }
+
+    function saveNotes({ immediate = false } = {}) {
+      if (immediate) {
+        cancelScheduledNotesSave();
+        persistNotes();
+        return;
+      }
+      if (notesSavePending) return;
+      notesSavePending = true;
+      const commit = () => {
+        notesSavePending = false;
+        notesSaveHandle = 0;
+        notesSaveHandleType = "";
+        persistNotes();
+      };
+      if (window.requestIdleCallback) {
+        notesSaveHandleType = "idle";
+        notesSaveHandle = window.requestIdleCallback(commit, { timeout: 2000 });
+      } else {
+        notesSaveHandleType = "timeout";
+        notesSaveHandle = window.setTimeout(commit, 250);
+      }
     }
 
     function parsePercentRatio(value, fallback = 0.92) {
@@ -2963,7 +2997,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       let aiDone = 0;
       for (const item of Object.values(notes)) {
         if (item?.manualDone) done += 1;
-        if (item?.aiDone || hasAutomatedDecisionNote(item?.note)) aiDone += 1;
+        if (item?.aiDone) aiDone += 1;
       }
       doneCount.textContent = String(done);
       aiDoneCount.textContent = String(aiDone);
@@ -3027,6 +3061,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       } else if (note && !current.note.includes(note)) {
         current.note = current.note + "\\n\\n" + note;
       }
+      cleanAiFailureState(current);
       notes[id] = current;
       pruneEmptyNote(id);
       const rendered = renderedRow(id);
@@ -3709,8 +3744,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     async function refreshAiStatus() {
       if (aiStatusRefreshInFlight) return;
       aiStatusRefreshInFlight = true;
+      let hasMoreResults = false;
       try {
-        const params = new URLSearchParams({ compact: "1" });
+        const params = new URLSearchParams({ compact: "1", resultLimit: "64" });
         if (lastAiRunId) {
           params.set("runId", lastAiRunId);
           params.set("afterRevision", String(lastAiResultRevision));
@@ -3718,12 +3754,21 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         }
         const response = await fetch("/api/ai-proofread/status?" + params);
         const data = await response.json();
-        if (data.ok) renderAiStatus(data.ai);
+        if (data.ok) {
+          renderAiStatus(data.ai);
+          hasMoreResults = Boolean(data.ai?.hasMoreResults);
+        }
       } catch {
         if (aiIds.status.dataset.cacheCleared) return;
         if (!isStatusMessageLocked()) setRuntimeStatus("未连接到本地控制台服务，AI 校对需要通过 npm run setup 打开工作台。");
       } finally {
         aiStatusRefreshInFlight = false;
+        if (hasMoreResults && !aiCatchupTimer) {
+          aiCatchupTimer = window.setTimeout(() => {
+            aiCatchupTimer = 0;
+            refreshAiStatus();
+          }, 16);
+        }
       }
     }
 
@@ -3854,6 +3899,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     });
     aiIds.refreshModels.addEventListener("click", refreshAiModels);
     window.addEventListener("resize", syncVisibleRowLayout);
+    window.addEventListener("pagehide", flushNotes);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) flushNotes();
+    });
     aiIds.start.addEventListener("click", async () => {
       statusMessageLockedUntil = 0;
       aiIds.start.disabled = true;
@@ -3878,6 +3927,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
         renderAiStatus(data.ai);
+        refreshAiStatus();
       } catch (error) {
         setRuntimeStatus(error.message);
         aiIds.start.disabled = false;
@@ -3891,7 +3941,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       try {
         const response = await fetch("/api/ai-proofread/stop", { method: "POST" });
         const data = await response.json();
-        if (data.ok) renderAiStatus(data.ai);
+        if (data.ok) {
+          renderAiStatus(data.ai);
+          refreshAiStatus();
+        }
       } catch (error) {
         setRuntimeStatus(error.message);
       } finally {
@@ -3977,11 +4030,19 @@ async function main() {
   }, null, 2), "utf8");
   reportProgress(100, "比较工作台构建完成", rows.length, rows.length);
 
+  const published = process.env.TRANSCOMPARATOR_OUTPUT_DIR
+    ? null
+    : publishProject(outputDir);
+
   console.log(`JP paragraphs: ${jp.length}`);
   console.log(`CN paragraphs: ${cn.length}`);
   console.log(`TW paragraphs: ${tw.length}`);
-  console.log(`HTML: ${path.join(outputDir, "translation-compare.html")}`);
-  console.log(`CSV: ${path.join(outputDir, "translation-compare.csv")}`);
+  if (published) {
+    console.log(`Published project: ${published.id} (${published.outputUrl})`);
+  } else {
+    console.log(`HTML: ${path.join(outputDir, "translation-compare.html")}`);
+    console.log(`CSV: ${path.join(outputDir, "translation-compare.csv")}`);
+  }
 }
 
 if (require.main === module) {

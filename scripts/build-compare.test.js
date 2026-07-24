@@ -92,6 +92,10 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(script, /aiStatusRefreshInFlight/);
   assert.match(script, /pendingResults\.length[\s\S]*?saveNotes\(\)[\s\S]*?updateDoneCount\(\)/);
   assert.match(script, /function writeNote\([^)]*\{ deferCommit = false \}/);
+  assert.match(script, /resultLimit: "64"/);
+  assert.match(script, /requestIdleCallback\(commit, \{ timeout: 2000 \}\)/);
+  assert.match(script, /window\.addEventListener\("pagehide", flushNotes\)/);
+  assert.doesNotMatch(html, /backdrop-filter/);
   assert.doesNotThrow(() => new Function(script));
 });
 

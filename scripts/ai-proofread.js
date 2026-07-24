@@ -1,13 +1,9 @@
 const fs = require("fs");
-const path = require("path");
 const { diffWordsWithSpace } = require("diff");
 const OpenCC = require("opencc-js");
 const { classifyPrefilter } = require("./ai-prefilter");
 const { rowSignature, sameProjectSnapshot } = require("./project-context");
-
-const rootDir = path.join(__dirname, "..");
-const outputDir = path.join(rootDir, "out");
-const compareJsonFile = path.join(outputDir, "translation-compare.json");
+const { resolveProjectArtifact } = require("./project-store");
 const toCn = OpenCC.Converter({ from: "tw", to: "cn" });
 const toTw = OpenCC.Converter({ from: "cn", to: "tw" });
 
@@ -147,7 +143,19 @@ function pushLog(line) {
 function clientStatus(options = {}) {
   const sameRun = Boolean(options.runId) && options.runId === status.runId;
   const afterRevision = sameRun ? clampInteger(options.afterRevision, 0, Number.MAX_SAFE_INTEGER, 0) : 0;
+  const resultLimit = clampInteger(options.resultLimit, 0, 500, 0);
   const knownRequestIds = new Set(Array.isArray(options.knownRequestIds) ? options.knownRequestIds : []);
+  const incrementalResults = status.resultChanges.slice(afterRevision, resultLimit ? afterRevision + resultLimit : undefined);
+  const results = options.includeResults === false
+    ? []
+    : (resultLimit || afterRevision
+      ? incrementalResults
+      : Array.from(status.results.values()).sort((a, b) => a.index - b.index));
+  const deliveredRevision = options.includeResults === false
+    ? afterRevision
+    : (resultLimit || afterRevision
+      ? (results.length ? results.at(-1).resultRevision : afterRevision)
+      : status.resultRevision);
   return {
     running: status.running,
     stopRequested: status.stopRequested,
@@ -179,10 +187,10 @@ function clientStatus(options = {}) {
     recentRequests: status.recentRequests.map((request) => requestForClient(request, knownRequestIds)),
     error: status.error,
     logs: options.includeLogs === false ? [] : status.logs,
-    results: afterRevision
-      ? status.resultChanges.slice(afterRevision)
-      : Array.from(status.results.values()).sort((a, b) => a.index - b.index),
-    resultRevision: status.resultRevision,
+    results,
+    resultRevision: deliveredRevision,
+    latestResultRevision: status.resultRevision,
+    hasMoreResults: deliveredRevision < status.resultRevision,
     providerDefaults,
     proofreadPrompt: proofreadPromptFor(status.proofreadMode),
   };
@@ -196,10 +204,10 @@ function withElapsed(requests) {
   }));
 }
 
-function readRows() {
-  if (!fs.existsSync(compareJsonFile)) {
-    throw new Error("请先生成 translation-compare.json。");
-  }
+function readRows(inputProject = {}) {
+  const compareJsonFile = resolveProjectArtifact(inputProject.projectKey, "translation-compare.json", {
+    rowsSignature: inputProject.rowsSignature,
+  });
   const data = JSON.parse(fs.readFileSync(compareJsonFile, "utf8"));
   return {
     project: data.project || null,
@@ -363,7 +371,7 @@ async function startProofread(input) {
   if (!config.model) throw new Error("请输入模型名称。");
   if (!config.baseUrl) throw new Error("请输入接口地址。");
 
-  const { project, rows } = readRows();
+  const { project, rows } = readRows(config);
   requireMatchingProjectSnapshot(config, project);
   config.proofreadMode = project.comparisonMode === "bilingual" ? "bilingual" : "trilingual";
   if (!String(input.systemPrompt || "").trim()) {
@@ -409,7 +417,7 @@ async function startProofread(input) {
     pushLog(status.error);
     finish();
   });
-  return clientStatus();
+  return clientStatus({ includeResults: false });
 }
 
 async function listModels(input = {}) {
@@ -484,11 +492,11 @@ function modelFallbackForBaseUrl(baseUrl) {
 }
 
 function stopProofread() {
-  if (!status.running) return clientStatus();
+  if (!status.running) return clientStatus({ includeResults: false });
   status.stopRequested = true;
   pushLog("收到终止请求，正在停止新的 AI 调用。");
   for (const controller of controllers) controller.abort();
-  return clientStatus();
+  return clientStatus({ includeResults: false });
 }
 
 function clearProofreadCache() {

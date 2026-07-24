@@ -1,9 +1,7 @@
 const fs = require("fs");
-const { spawn } = require("child_process");
 const crypto = require("crypto");
 const http = require("http");
 const path = require("path");
-const { StringDecoder } = require("string_decoder");
 const { URL } = require("url");
 const {
   guessLangOrder,
@@ -27,56 +25,23 @@ const {
 } = require("./ai-proofread");
 const {
   activateProject,
-  archiveCurrentProject,
+  getActiveProject,
   listProjects,
+  readProjectSelection,
+  resolveProjectArtifact,
 } = require("./project-store");
+const { GenerationPipeline } = require("./generation-pipeline");
+const { storageLayout } = require("./storage-layout");
 
 const rootDir = path.join(__dirname, "..");
 const publicDir = path.join(rootDir, "public");
+const dataLayout = storageLayout();
 const defaultPort = Number(process.env.TRANSCOMPARATOR_SETUP_PORT || 4317);
 const host = "127.0.0.1";
-const compareHtmlFile = path.join(rootDir, "out", "translation-compare.html");
-const importedInputsDir = path.join(rootDir, "out", "imported-inputs");
+const importedInputsDir = dataLayout.importedInputsDir;
 const maxUploadBytes = 80 * 1024 * 1024;
-const progressPrefix = "@@transcomparator-progress@@";
-const consoleApiVersion = 2;
-
-function resolveNpmCommand() {
-  if (process.env.TRANSCOMPARATOR_NPM_CMD) return process.env.TRANSCOMPARATOR_NPM_CMD;
-  if (process.platform !== "win32") return "npm";
-  const candidates = [
-    "C:\\PROGRA~1\\nodejs\\npm.cmd",
-    "C:\\PROGRA~2\\nodejs\\npm.cmd",
-    path.join(process.env.ProgramFiles || "C:\\Program Files", "nodejs", "npm.cmd"),
-    path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "nodejs", "npm.cmd"),
-  ];
-  return candidates.find((candidate) => fs.existsSync(candidate)) || "npm.cmd";
-}
-
-const npmCommand = resolveNpmCommand();
-
-const pipeline = {
-  running: false,
-  step: "idle",
-  progress: { current: 0, total: 2, percent: 0, step: "idle" },
-  code: null,
-  error: "",
-  startedAt: null,
-  finishedAt: null,
-  completedProject: null,
-  logs: [],
-};
-
-function pushLog(line) {
-  const text = String(line || "").replace(/\r\n?/g, "\n");
-  for (const part of text.split("\n")) {
-    if (!part) continue;
-    pipeline.logs.push(part);
-  }
-  if (pipeline.logs.length > 500) {
-    pipeline.logs.splice(0, pipeline.logs.length - 500);
-  }
-}
+const consoleApiVersion = 3;
+const generation = new GenerationPipeline();
 
 function sendJson(res, status, payload) {
   res.writeHead(status, {
@@ -121,52 +86,6 @@ function filePayload(file) {
     name: path.basename(file),
     ext: path.extname(file).slice(1).toLowerCase(),
     size: stat.size,
-  };
-}
-
-function parseProgressMessage(line) {
-  const text = String(line || "").trim();
-  if (!text.startsWith(progressPrefix)) return null;
-  try {
-    const message = JSON.parse(text.slice(progressPrefix.length));
-    const percent = Number(message.percent);
-    if (!Number.isFinite(percent)) return null;
-    return {
-      ...message,
-      percent: Math.max(0, Math.min(100, percent)),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function mapCommandProgress(message, step, range = {}) {
-  const start = Number(range.start) || 0;
-  const end = Number.isFinite(Number(range.end)) ? Number(range.end) : 100;
-  const percent = start + ((end - start) * message.percent / 100);
-  return {
-    current: Number(message.current) || 0,
-    total: Number(message.total) || 0,
-    percent: Math.round(percent * 10) / 10,
-    step,
-    detail: String(message.label || "").trim(),
-  };
-}
-
-function createLineConsumer(onLine) {
-  let buffered = "";
-  return {
-    write(text) {
-      buffered += String(text || "").replace(/\r\n?/g, "\n");
-      const lines = buffered.split("\n");
-      buffered = lines.pop() || "";
-      for (const line of lines) onLine(line);
-    },
-    end(text = "") {
-      this.write(text);
-      if (buffered) onLine(buffered);
-      buffered = "";
-    },
   };
 }
 
@@ -267,138 +186,6 @@ function saveInputSelection(payload) {
   return { selection, selectionFile };
 }
 
-function runCommand(command, args, step, progressRange) {
-  return new Promise((resolve, reject) => {
-    pipeline.step = step;
-    if (progressRange) {
-      pipeline.progress = {
-        current: 0,
-        total: 0,
-        percent: progressRange.start,
-        step,
-        detail: progressRange.label || "",
-      };
-    }
-    pushLog(`> ${[command, ...args].join(" ")}`);
-    const spawnOptions = {
-      cwd: rootDir,
-      shell: false,
-      env: {
-        ...process.env,
-        PYTHONIOENCODING: process.env.PYTHONIOENCODING || "utf-8",
-        PYTHONUTF8: process.env.PYTHONUTF8 || "1",
-        TRANS_COMPARATOR_MACHINE_PROGRESS: "1",
-      },
-    };
-    const stdoutDecoder = new StringDecoder("utf8");
-    const stderrDecoder = new StringDecoder("utf8");
-    const child = process.platform === "win32"
-      ? spawn(process.env.ComSpec || "cmd.exe", ["/d", "/c", makeWindowsCommand(command, args)], spawnOptions)
-      : spawn(command, args, spawnOptions);
-
-    const consumeLine = (line) => {
-      const message = parseProgressMessage(line);
-      if (message && progressRange) {
-        pipeline.progress = mapCommandProgress(message, step, progressRange);
-        return;
-      }
-      pushLog(line);
-    };
-    const stdoutConsumer = createLineConsumer(consumeLine);
-    const stderrConsumer = createLineConsumer(consumeLine);
-    child.stdout.on("data", (chunk) => stdoutConsumer.write(stdoutDecoder.write(chunk)));
-    child.stderr.on("data", (chunk) => stderrConsumer.write(stderrDecoder.write(chunk)));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      stdoutConsumer.end(stdoutDecoder.end());
-      stderrConsumer.end(stderrDecoder.end());
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(`${step} failed with exit code ${code}.`));
-    });
-  });
-}
-
-function makeWindowsCommand(command, args) {
-  return ["call", quoteWindowsCommandArg(command), ...args.map(quoteWindowsCommandArg)].join(" ");
-}
-
-function quoteWindowsCommandArg(value) {
-  const text = String(value);
-  if (!/[()\s^&|<>"]/.test(text)) return text;
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-async function runPipeline() {
-  pipeline.running = true;
-  pipeline.step = "starting";
-  pipeline.progress = { current: 0, total: 2, percent: 0, step: "starting" };
-  pipeline.code = null;
-  pipeline.error = "";
-  pipeline.startedAt = new Date().toISOString();
-  pipeline.finishedAt = null;
-  pipeline.completedProject = null;
-  pipeline.logs = [];
-  try {
-    await runCommand(npmCommand, ["run", "align:jp"], "align:jp", {
-      start: 2,
-      end: 84,
-      label: "检查运行环境",
-    });
-    await runCommand(npmCommand, ["run", "build"], "build", {
-      start: 84,
-      end: 98,
-      label: "加载对齐结果",
-    });
-    pipeline.progress = { current: 0, total: 0, percent: 99, step: "archive", detail: "归档项目快照" };
-    const project = archiveCurrentProject();
-    pipeline.completedProject = project;
-    pipeline.step = "done";
-    pipeline.progress = { current: 2, total: 2, percent: 100, step: "done" };
-    pipeline.code = 0;
-    pushLog(`Project archived: ${project.name}`);
-    pushLog(`Done. Output: ${compareHtmlFile}`);
-  } catch (error) {
-    pipeline.step = "failed";
-    pipeline.progress = { ...pipeline.progress, step: "failed" };
-    pipeline.code = 1;
-    pipeline.error = error.message || String(error);
-    pushLog(pipeline.error);
-  } finally {
-    pipeline.running = false;
-    pipeline.finishedAt = new Date().toISOString();
-  }
-}
-
-function pipelineStatus() {
-  return {
-    running: pipeline.running,
-    step: pipeline.step,
-    progress: pipeline.progress,
-    code: pipeline.code,
-    error: pipeline.error,
-    startedAt: pipeline.startedAt,
-    finishedAt: pipeline.finishedAt,
-    completedProject: pipeline.completedProject,
-    logs: pipeline.logs,
-    outputExists: fs.existsSync(compareHtmlFile),
-    outputUrl: fs.existsSync(compareHtmlFile) ? "/output/translation-compare.html" : "",
-  };
-}
-
-function markProjectReady(project) {
-  pipeline.step = "ready";
-  pipeline.progress = { current: 2, total: 2, percent: 100, step: "ready" };
-  pipeline.code = 0;
-  pipeline.error = "";
-  pipeline.startedAt = null;
-  pipeline.finishedAt = new Date().toISOString();
-  pipeline.completedProject = null;
-  pipeline.logs = [`已切换项目：${project.name}`];
-}
-
 function serveStatic(req, res, pathname) {
   const target = pathname === "/" ? path.join(publicDir, "setup.html") : path.join(publicDir, pathname);
   const resolved = path.resolve(target);
@@ -420,16 +207,18 @@ function serveStatic(req, res, pathname) {
 }
 
 function serveOutput(res, pathname) {
-  if (pathname !== "/output/translation-compare.html") {
-    sendError(res, 404, new Error("Output not found."));
-    return;
+  try {
+    const match = pathname.match(/^\/output\/([^/]+)\/translation-compare\.html$/);
+    const projectKey = match
+      ? decodeURIComponent(match[1])
+      : (pathname === "/output/translation-compare.html" ? getActiveProject()?.id : "");
+    if (!projectKey) throw new Error("工作台尚未生成。");
+    const compareHtmlFile = resolveProjectArtifact(projectKey, "translation-compare.html");
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+    fs.createReadStream(compareHtmlFile).pipe(res);
+  } catch (error) {
+    sendError(res, 404, error);
   }
-  if (!fs.existsSync(compareHtmlFile)) {
-    sendError(res, 404, new Error("工作台尚未生成。"));
-    return;
-  }
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-  fs.createReadStream(compareHtmlFile).pipe(res);
 }
 
 async function handleApi(req, res, pathname, searchParams) {
@@ -444,7 +233,7 @@ async function handleApi(req, res, pathname, searchParams) {
         selectionFile,
         saved,
         savedFiles: savedFilePayloads(saved),
-        pipeline: pipelineStatus(),
+        pipeline: generation.status(),
         ...listProjects(),
       });
       return;
@@ -456,7 +245,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     if (req.method === "POST" && /^\/api\/projects\/[^/]+\/activate$/.test(pathname)) {
-      if (pipeline.running) {
+      if (generation.running) {
         sendJson(res, 409, { ok: false, error: "生成流程正在运行，暂时不能切换项目。" });
         return;
       }
@@ -467,15 +256,16 @@ async function handleApi(req, res, pathname, searchParams) {
       clearProofreadCache();
       const projectKey = decodeURIComponent(pathname.split("/")[3]);
       const project = activateProject(projectKey);
-      const saved = JSON.parse(fs.readFileSync(selectionFile, "utf8"));
-      markProjectReady(project);
+      const saved = readProjectSelection(projectKey, { snapshotId: project.snapshotId });
+      saveSelection(saved);
+      generation.markProjectReady(project);
       sendJson(res, 200, {
         ok: true,
         apiVersion: consoleApiVersion,
         project,
         saved,
         savedFiles: savedFilePayloads(saved),
-        pipeline: pipelineStatus(),
+        pipeline: generation.status(),
         ...listProjects({ adoptCurrent: false }),
       });
       return;
@@ -499,21 +289,22 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     if (req.method === "POST" && pathname === "/api/run") {
-      if (pipeline.running) {
-        sendJson(res, 409, { ok: false, error: "生成流程正在运行。", pipeline: pipelineStatus() });
+      if (generation.running) {
+        sendJson(res, 409, { ok: false, error: "生成流程正在运行。", pipeline: generation.status() });
         return;
       }
       if (aiProofreadStatus().running) {
-        sendJson(res, 409, { ok: false, error: "AI 校对正在运行，请先停止后再生成新的工作台。", pipeline: pipelineStatus(), ai: aiProofreadStatus() });
+        sendJson(res, 409, { ok: false, error: "AI 校对正在运行，请先停止后再生成新的工作台。", pipeline: generation.status(), ai: aiProofreadStatus() });
         return;
       }
       if (!fs.existsSync(selectionFile)) {
-        sendJson(res, 400, { ok: false, error: "请先保存输入选择。", pipeline: pipelineStatus() });
+        sendJson(res, 400, { ok: false, error: "请先保存输入选择。", pipeline: generation.status() });
         return;
       }
       clearProofreadCache();
-      runPipeline();
-      sendJson(res, 202, { ok: true, apiVersion: consoleApiVersion, pipeline: pipelineStatus() });
+      const selection = validateSelection(JSON.parse(fs.readFileSync(selectionFile, "utf8")));
+      generation.run(selection);
+      sendJson(res, 202, { ok: true, apiVersion: consoleApiVersion, pipeline: generation.status() });
       return;
     }
 
@@ -523,6 +314,7 @@ async function handleApi(req, res, pathname, searchParams) {
         ai: aiProofreadStatus({
           runId: searchParams.get("runId") || "",
           afterRevision: searchParams.get("afterRevision") || 0,
+          resultLimit: searchParams.get("resultLimit") || 0,
           knownRequestIds: searchParams.getAll("knownRequestId"),
           includeLogs: searchParams.get("compact") !== "1",
         }),
@@ -594,7 +386,5 @@ if (require.main === module) {
 module.exports = {
   createServer,
   host,
-  mapCommandProgress,
-  parseProgressMessage,
   saveUploadedInput,
 };

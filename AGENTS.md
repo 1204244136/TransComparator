@@ -44,19 +44,25 @@ TransComparator 是一个本地、文件型文本对齐与翻译校对工作台�
 
 4. `scripts/export-paragraphs.js`
    - 加载最多三份源文件。
-   - 写入 `out/paragraphs.json`。
+   - 写入当前构建目录的 `paragraphs.json` 和输入选择快照。
    - 被 `npm run align:jp` 自动调用。
 
 5. `scripts/align_jp.py`
    - 使用 `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` 做跨语言语义对齐。
    - 当 `torch.cuda.is_available()` 为 true 时使用 CUDA/ROCm 暴露的加速后端，否则使用 CPU，除非 accelerator guard 阻止。
-   - 写入 `out/jp-align.json`，其中 `groups` 是主流程使用的数据。
+   - 写入当前构建目录的 `jp-align.json`，其中 `groups` 是主流程使用的数据。
 
 6. `scripts/build-compare.js`
    - 对齐两份非原文文本。
    - 读取跨语言 `groups`。
    - 按技术 pivot interval 合并不同方向的对齐组。
    - 输出 HTML、CSV、JSON。
+
+7. `scripts/storage-layout.js`、`scripts/project-store.js`、`scripts/generation-pipeline.js`
+   - 将运行时输入、隔离 staging 和不可变项目快照划分到不同目录。
+   - 控制台生成成功后以目录 rename 发布快照，再原子更新 `out/active-project.json`。
+   - 项目切换只更新活动指针和小型输入选择，不复制大型生成物。
+   - `out/projects/<projectKey>/snapshots/<snapshotId>/` 是已发布生成物的唯一事实来源。
 
 ## 正文过滤原则
 
@@ -88,6 +94,13 @@ Pandoc 会忠实输出完整 linear text；过滤职责属于 TransComparator。
 ## 生成文件与重型文件
 
 `.codegraph/` 是 CodeGraph 目录索引插件的本地索引依赖，不属于可清理生成物。不要删除、移动或重建该目录，除非用户明确要求重新生成 CodeGraph 索引。
+
+`out/` 的存储边界：
+
+- `runtime/` 只保存当前输入、浏览器导入文件和命令行临时工作目录。
+- `.staging/` 只保存尚未发布的控制台生成任务。
+- `projects/` 只保存不可变项目快照。
+- 顶层只允许 `active-project.json` 指针，不要重新引入顶层 `paragraphs.json`、`jp-align.json` 或 `translation-compare.*`。
 
 除非用户明确要求，不要提交或复制：
 
@@ -130,13 +143,13 @@ npm run build
 检查段落数量和末尾内容：
 
 ```powershell
-node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('./out/paragraphs.json','utf8')); console.log(JSON.stringify({counts:{jp:p.jp.length,cn:p.cn.length,tw:p.tw.length}, last:{jp:p.jp.at(-1)?.text, cn:p.cn.at(-1)?.text, tw:p.tw.at(-1)?.text}}, null, 2));"
+node -e "const fs=require('fs'); const {getActiveProject,resolveProjectArtifact}=require('./scripts/project-store'); const a=getActiveProject(); if(!a) throw Error('没有活动项目'); const p=JSON.parse(fs.readFileSync(resolveProjectArtifact(a.id,'paragraphs.json',{snapshotId:a.snapshotId}),'utf8')); console.log(JSON.stringify({counts:{jp:p.jp.length,cn:p.cn.length,tw:p.tw.length},last:{jp:p.jp.at(-1)?.text,cn:p.cn.at(-1)?.text,tw:p.tw.at(-1)?.text}},null,2));"
 ```
 
 检查最终行：
 
 ```powershell
-node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('./out/translation-compare.json','utf8')); const map=new Map(); data.rows.forEach((r,i)=>{ if([...r.jp].length>=18){ if(!map.has(r.jp)) map.set(r.jp,[]); map.get(r.jp).push(i+1); }}); const dup=[...map.entries()].filter(([,v])=>v.length>1).slice(0,5).map(([jp,rows])=>({rows,jp:jp.slice(0,80)})); const counts={}; for(const r of data.rows){counts[r.relation]=(counts[r.relation]||0)+1} console.log(JSON.stringify({rows:data.rows.length, emptySource:data.rows.filter(r=>!r.jp).length, duplicateLongParagraphs:dup.length, counts, dup},null,2));"
+node -e "const fs=require('fs'); const {getActiveProject,resolveProjectArtifact}=require('./scripts/project-store'); const a=getActiveProject(); if(!a) throw Error('没有活动项目'); const data=JSON.parse(fs.readFileSync(resolveProjectArtifact(a.id,'translation-compare.json',{snapshotId:a.snapshotId}),'utf8')); const map=new Map(); data.rows.forEach((r,i)=>{if([...r.jp].length>=18){if(!map.has(r.jp))map.set(r.jp,[]);map.get(r.jp).push(i+1)}}); const dup=[...map.entries()].filter(([,v])=>v.length>1).slice(0,5).map(([jp,rows])=>({rows,jp:jp.slice(0,80)})); const counts={}; for(const r of data.rows)counts[r.relation]=(counts[r.relation]||0)+1; console.log(JSON.stringify({rows:data.rows.length,emptySource:data.rows.filter(r=>!r.jp).length,duplicateLongParagraphs:dup.length,counts,dup},null,2));"
 ```
 
 一般期望：
@@ -150,7 +163,7 @@ node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('./out/tr
 
 原文重复：检查是否重新引入了无 reuse tracking 的 fallback，或技术 pivot interval 合并是否漏掉重叠组。
 
-原文为空：检查 `out/jp-align.json` 是否过期，或正文过滤是否改变了段落索引。
+原文为空：检查活动项目快照中的 `jp-align.json` 是否过期，或正文过滤是否改变了段落索引。
 
 章节标题污染正文：补充 `chapterPatterns`，然后重新生成全部输出。
 

@@ -6,10 +6,9 @@ const test = require("node:test");
 const {
   createServer,
   host,
-  mapCommandProgress,
-  parseProgressMessage,
   saveUploadedInput,
 } = require("./input-server");
+const { mapCommandProgress, parseProgressMessage } = require("./generation-pipeline");
 
 function uploadPayload(role, name, text, comparisonMode = "bilingual") {
   return {
@@ -87,7 +86,7 @@ test("status exposes the project API version and completed project slot", async 
     const response = await fetch(`http://${host}:${address.port}/api/status`);
     const data = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(data.apiVersion, 2);
+    assert.equal(data.apiVersion, 3);
     assert.ok(Array.isArray(data.projects));
     assert.ok(Object.hasOwn(data.pipeline, "completedProject"));
   } finally {
@@ -103,13 +102,15 @@ test("AI status supports compact incremental polling", async () => {
   });
   try {
     const address = server.address();
-    const response = await fetch(`http://${host}:${address.port}/api/ai-proofread/status?compact=1&runId=unknown&afterRevision=12`);
+    const response = await fetch(`http://${host}:${address.port}/api/ai-proofread/status?compact=1&runId=unknown&afterRevision=12&resultLimit=64`);
     const data = await response.json();
     assert.equal(response.status, 200);
     assert.equal(data.ok, true);
     assert.deepEqual(data.ai.logs, []);
     assert.ok(Array.isArray(data.ai.results));
     assert.equal(Number.isInteger(data.ai.resultRevision), true);
+    assert.equal(Number.isInteger(data.ai.latestResultRevision), true);
+    assert.equal(typeof data.ai.hasMoreResults, "boolean");
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }

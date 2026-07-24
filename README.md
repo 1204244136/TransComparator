@@ -170,7 +170,7 @@ http://127.0.0.1:4317/
 npm run export:paragraphs
 ```
 
-从指定目录选择源文件。程序会按文件名做初步推断，并把选择结果保存到 `out/input-selection.json`：
+从指定目录选择源文件。程序会按文件名做初步推断，并把当前选择保存到 `out/runtime/input-selection.json`：
 
 ```powershell
 npm run export:paragraphs -- --input-dir "C:\path\to\texts"
@@ -230,17 +230,16 @@ $env:TRANSCOMPARATOR_EPUB_CONVERTER = "pandoc"
 
 ## 输出文件
 
-输出目录是 `out/`，默认不会提交到 Git：
+输出目录是 `out/`，默认不会提交到 Git。它按职责分为三个区域：
 
-- `out/input-selection.json`：本地输入选择，包含源文件绝对路径。
-- `out/paragraphs.json`：清洗、过滤、切分后的段落。
-- `out/jp-align.json`：原文与技术 pivot 文本之间的跨语言语义对齐结果。
-- `out/translation-compare.html`：本地 HTML 校对工作台。
-- `out/translation-compare.csv`：可导入 spreadsheet 工具的表格。
-- `out/translation-compare.json`：结构化结果，便于调试和下游处理。
-- `out/projects/<projectKey>/`：按校对项目保存的完整快照，可从控制台切换。
+- `out/runtime/input-selection.json`：控制台和命令行当前使用的输入选择，包含源文件绝对路径。
+- `out/runtime/imported-inputs/`：浏览器上传的源文件副本。
+- `out/runtime/work/`：命令行生成时的临时工作目录；成功执行 `npm run build` 后会被发布为项目快照。
+- `out/.staging/<runId>/`：控制台每次生成使用的隔离暂存目录。失败任务只清理自己的目录，不会覆盖已发布项目。
+- `out/projects/<projectKey>/snapshots/<snapshotId>/`：不可变项目快照，包含 `input-selection.json`、`paragraphs.json`、`jp-align.json` 和三种 `translation-compare.*` 输出。
+- `out/active-project.json`：当前活动项目与快照的小型指针文件。
 
-`out/` 顶层始终是当前活动项目，供现有构建脚本和 AI 校对 API 使用。`translation-compare.html` 可以直接用浏览器打开；备注保存在浏览器本地，不会写回源文本。
+切换项目只更新 `active-project.json` 和当前输入选择，不复制 HTML、JSON 或对齐结果。每个项目默认保留最近两个快照；AI 校对按 `projectKey` 与行签名读取对应快照，避免切换项目时串用数据。控制台通过 `/output/<projectKey>/translation-compare.html` 打开工作台；备注保存在浏览器本地，不会写回源文本。
 
 ## AI 辅助校对
 
@@ -293,13 +292,13 @@ TransComparator 的实现参考并借助了多个开源项目和开放生态组�
 检查段落数量、尾部内容和是否混入非正文块：
 
 ```powershell
-node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('./out/paragraphs.json','utf8')); console.log(JSON.stringify({counts:{jp:p.jp.length,cn:p.cn.length,tw:p.tw.length}, last:{jp:p.jp.at(-1)?.text, cn:p.cn.at(-1)?.text, tw:p.tw.at(-1)?.text}}, null, 2));"
+node -e "const fs=require('fs'); const {getActiveProject,resolveProjectArtifact}=require('./scripts/project-store'); const a=getActiveProject(); if(!a) throw Error('没有活动项目'); const p=JSON.parse(fs.readFileSync(resolveProjectArtifact(a.id,'paragraphs.json',{snapshotId:a.snapshotId}),'utf8')); console.log(JSON.stringify({counts:{jp:p.jp.length,cn:p.cn.length,tw:p.tw.length},last:{jp:p.jp.at(-1)?.text,cn:p.cn.at(-1)?.text,tw:p.tw.at(-1)?.text}},null,2));"
 ```
 
 检查最终工作台是否出现大量空原文或重复长原文：
 
 ```powershell
-node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('./out/translation-compare.json','utf8')); const map=new Map(); data.rows.forEach((r,i)=>{ if([...r.jp].length>=18){ if(!map.has(r.jp)) map.set(r.jp,[]); map.get(r.jp).push(i+1); }}); const dup=[...map.entries()].filter(([,v])=>v.length>1).slice(0,5).map(([jp,rows])=>({rows,jp:jp.slice(0,80)})); const counts={}; for(const r of data.rows){counts[r.relation]=(counts[r.relation]||0)+1} console.log(JSON.stringify({rows:data.rows.length, emptySource:data.rows.filter(r=>!r.jp).length, duplicateLongParagraphs:dup.length, counts, dup},null,2));"
+node -e "const fs=require('fs'); const {getActiveProject,resolveProjectArtifact}=require('./scripts/project-store'); const a=getActiveProject(); if(!a) throw Error('没有活动项目'); const data=JSON.parse(fs.readFileSync(resolveProjectArtifact(a.id,'translation-compare.json',{snapshotId:a.snapshotId}),'utf8')); const map=new Map(); data.rows.forEach((r,i)=>{if([...r.jp].length>=18){if(!map.has(r.jp))map.set(r.jp,[]);map.get(r.jp).push(i+1)}}); const dup=[...map.entries()].filter(([,v])=>v.length>1).slice(0,5).map(([jp,rows])=>({rows,jp:jp.slice(0,80)})); const counts={}; for(const r of data.rows)counts[r.relation]=(counts[r.relation]||0)+1; console.log(JSON.stringify({rows:data.rows.length,emptySource:data.rows.filter(r=>!r.jp).length,duplicateLongParagraphs:dup.length,counts,dup},null,2));"
 ```
 
 ## 公开仓库注意事项
@@ -308,7 +307,7 @@ node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('./out/tr
 
 - `.codegraph/`、`.venv/`、`node_modules/`、`out/` 没有进入暂存区。
 - 源文本文件没有进入暂存区，例如 TXT、EPUB、DOCX、PDF、ODT、RTF。
-- `out/input-selection.json` 没有提交，因为它包含本机绝对路径。
+- `out/runtime/input-selection.json` 没有提交，因为它包含本机绝对路径。
 - README、脚本和前端页面里没有个人目录、真实作品名、API Key 或模型服务密钥。
 
 可以用下面的命令查看将被 Git 追踪的未忽略文件：
@@ -345,4 +344,4 @@ npm run build
 
 ### 对齐发生连锁错位
 
-先检查 `out/paragraphs.json` 是否混入图片占位、页码、脚注或元信息。预处理稳定后再重新运行 `npm run align:jp` 和 `npm run build`。
+先检查活动项目快照中的 `paragraphs.json` 是否混入图片占位、页码、脚注或元信息。预处理稳定后再重新运行 `npm run align:jp` 和 `npm run build`。

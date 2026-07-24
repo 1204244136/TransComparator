@@ -1044,7 +1044,7 @@
       const missing = requiredRoles.filter((role) => !state.roleFiles[role]);
       const ok = missing.length === 0 && new Set(values).size === requiredRoles.length && state.uploading.size === 0;
       ids.saveButton.disabled = !ok;
-      ids.runButton.disabled = !state.saved || state.serverApiVersion < 2;
+      ids.runButton.disabled = !state.saved || state.serverApiVersion < 3;
       if (!ok && !state.uploading.size) {
         setStatus(missing.length ? `还需导入：${missing.map((role) => roleNames[role]).join("、")}` : "不同角色不能使用同一个文件。", "warn");
       }
@@ -1242,7 +1242,7 @@
       if (pipeline.step === "done" && pipeline.completedProject) {
         upsertCompletedProject(pipeline.completedProject);
       }
-      ids.runButton.disabled = Boolean(pipeline.running) || !state.saved || state.serverApiVersion < 2;
+      ids.runButton.disabled = Boolean(pipeline.running) || !state.saved || state.serverApiVersion < 3;
       updateProjectSelection();
       updateProgress(pipeline.progress || { step: pipeline.step });
       const stickToBottom = ids.log.scrollHeight - ids.log.scrollTop - ids.log.clientHeight <= 24;
@@ -1293,7 +1293,7 @@
           state.serverApiVersion = Number(data.apiVersion) || 0;
           applySavedSelection(data.saved, data.savedFiles);
           renderPipeline(data.pipeline);
-          if (state.serverApiVersion >= 2 && Array.isArray(data.projects)) {
+          if (state.serverApiVersion >= 3 && Array.isArray(data.projects)) {
             renderProjects(data.projects, data.activeProjectKey);
           } else {
             showServerVersionMismatch();
@@ -1344,7 +1344,7 @@
     }
 
     async function runPipeline() {
-      if (state.serverApiVersion < 2) {
+      if (state.serverApiVersion < 3) {
         showServerVersionMismatch();
         return;
       }

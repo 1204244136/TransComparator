@@ -15,7 +15,7 @@ from sentence_transformers import SentenceTransformer
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "out"
+OUT = Path(os.environ.get("TRANSCOMPARATOR_OUTPUT_DIR", ROOT / "out" / "runtime" / "work")).resolve()
 PARAGRAPHS = OUT / "paragraphs.json"
 ALIGNMENT = OUT / "jp-align.json"
 
