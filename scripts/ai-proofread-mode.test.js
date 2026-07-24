@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { buildMessages } = require("./ai-proofread");
+const { buildMessages, proofreadPromptFor } = require("./ai-proofread");
 
 function payload() {
   return {
@@ -33,4 +33,14 @@ test("trilingual AI prompt keeps B and C peer-level and edits only the selected 
   assert.match(messages[0].content, /B、C 是同级非原文/);
   assert.match(messages[0].content, /只修改用户选择的目标列/);
   assert.equal(user.comparisonMode, "trilingual");
+});
+
+test("bilingual and trilingual workbenches use different default prompts", () => {
+  const bilingual = proofreadPromptFor("bilingual").system;
+  const trilingual = proofreadPromptFor("trilingual").system;
+  assert.notEqual(bilingual, trilingual);
+  assert.match(bilingual, /B 是唯一译文与唯一修改列/);
+  assert.match(bilingual, /不要假设存在另一份译文/);
+  assert.match(trilingual, /B、C 是同级非原文材料/);
+  assert.match(trilingual, /better=counterpart/);
 });

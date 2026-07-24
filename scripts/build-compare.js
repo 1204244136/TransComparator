@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { outputDir, toCn, loadParagraphs } = require("./text-utils");
 const { resolveInputSelection } = require("./input-selection");
-const { providerDefaults, proofreadPrompt } = require("./ai-proofread");
+const { providerDefaults, proofreadPromptFor } = require("./ai-proofread");
 const { createProjectContext, rowSignature } = require("./project-context");
 
 const progressPrefix = "@@transcomparator-progress@@";
@@ -638,6 +638,7 @@ function rowClass(score) {
 function makeHtml(rows, selection, projectContext, pgaTemplate) {
   const comparisonMode = selection.comparisonMode === "bilingual" ? "bilingual" : "trilingual";
   const bilingual = comparisonMode === "bilingual";
+  const proofreadPrompt = proofreadPromptFor(comparisonMode);
   const generatedAt = new Date(projectContext.generatedAt).toLocaleString("zh-CN", { hour12: false });
   const labels = {
     jp: "日文",
@@ -2034,6 +2035,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const pageLabels = pageMeta.pageLabels;
     const bilingualMode = pageMeta.comparisonMode === "bilingual";
     const aiConfigStorageKey = "translation-compare-ai-config-v1";
+    const aiPromptStorageKey = "translation-compare-ai-prompt-v1:" + (pageMeta.projectKey || "unscoped");
     const automatedNoteMarkers = ["[AI校对]", "[规则预筛]", "[相似度预筛]"];
     const allRows = JSON.parse(document.getElementById("rowData").textContent);
     const rowsById = new Map(allRows.map((row) => [String(row.index), row]));
@@ -2260,6 +2262,14 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
     }
 
+    function loadSavedAiPrompt() {
+      try {
+        return JSON.parse(localStorage.getItem(aiPromptStorageKey) || "{}");
+      } catch {
+        return {};
+      }
+    }
+
     function saveAiConfig() {
       const config = {
         provider: aiIds.provider.value,
@@ -2273,14 +2283,20 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         similarity: formatPercentRatio(aiIds.similarity.value),
         monitorEnabled: aiIds.monitorEnabled.checked,
         promptVisible: aiIds.promptVisible.checked,
-        systemPrompt: aiIds.prompt.value,
-        promptTouched: Boolean(aiIds.prompt.dataset.touched),
       };
       localStorage.setItem(aiConfigStorageKey, JSON.stringify(config));
     }
 
+    function saveAiPrompt() {
+      localStorage.setItem(aiPromptStorageKey, JSON.stringify({
+        systemPrompt: aiIds.prompt.value,
+        promptTouched: Boolean(aiIds.prompt.dataset.touched),
+      }));
+    }
+
     function restoreAiConfig() {
       const saved = loadSavedAiConfig();
+      const savedPrompt = loadSavedAiPrompt();
       if (!saved || typeof saved !== "object") return;
       if (saved.provider && providerDefaults[saved.provider]) aiIds.provider.value = saved.provider;
       if (typeof saved.baseUrl === "string") {
@@ -2304,9 +2320,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       if (saved.similarity != null) aiIds.similarity.value = formatPercentRatio(saved.similarity);
       aiIds.monitorEnabled.checked = Boolean(saved.monitorEnabled);
       aiIds.promptVisible.checked = Boolean(saved.promptVisible);
-      if (typeof saved.systemPrompt === "string" && saved.systemPrompt) {
-        if (saved.promptTouched) {
-          aiIds.prompt.value = saved.systemPrompt;
+      if (typeof savedPrompt.systemPrompt === "string" && savedPrompt.systemPrompt) {
+        if (savedPrompt.promptTouched) {
+          aiIds.prompt.value = savedPrompt.systemPrompt;
           aiIds.prompt.dataset.touched = "1";
         } else {
           aiIds.prompt.value = defaultProofreadPrompt;
@@ -3455,7 +3471,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         providerDefaults = ai.providerDefaults;
         applyProviderDefaults(providerDefaults[aiIds.provider.value]);
       }
-      if (ai.proofreadPrompt?.system) {
+      if (sameAiScope && ai.proofreadPrompt?.system) {
         const previousDefault = defaultProofreadPrompt;
         defaultProofreadPrompt = ai.proofreadPrompt.system;
         if (!aiIds.prompt.dataset.touched || aiIds.prompt.value === previousDefault) {
@@ -3649,13 +3665,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     });
     aiIds.prompt.addEventListener("input", () => {
       aiIds.prompt.dataset.touched = "1";
-      saveAiConfig();
+      saveAiPrompt();
     });
     aiIds.promptReset.addEventListener("click", () => {
       aiIds.prompt.value = defaultProofreadPrompt;
       aiIds.prompt.dataset.touched = "";
       aiIds.prompt.focus();
-      saveAiConfig();
+      saveAiPrompt();
     });
     aiIds.refreshModels.addEventListener("click", refreshAiModels);
     window.addEventListener("resize", syncVisibleRowLayout);

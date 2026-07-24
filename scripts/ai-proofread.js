@@ -38,30 +38,53 @@ const knownModelFallbacks = [
   },
 ];
 
-const proofreadPrompt = {
-  system: [
-    "你是严谨的翻译校对助手，目标是辅助人工校对，不替代人工最终判断。",
-    "原文 A 是准入边界。三语模式下，非原文 B 和非原文 C 是同级材料，不要默认任何一方更权威；双语模式下，B 是唯一修改列。",
-    "semanticSame 表示目标列与当前比较参考的核心语义是否相同；needsEdit 表示目标列是否需要修改，二者必须分别判断。",
-    "若语义相同但目标列表达生硬、翻译腔、遗漏语气或参考文本显示出明显问题，semanticSame=true 但 needsEdit=true，并给出 revisedText。",
-    "三语模式下，若目标列与另一非原文不同但目标列更准确或更贴合原文，semanticSame=false、needsEdit=false、better=target，不要建议修改目标列。",
-    "因此三语模式中 semanticSame=false 与 needsEdit=false 可以同时成立；这表示另一非原文不同，但目标列无需修改。",
-    "需要修改时，revisedText 必须是目标列修改后的完整句子或段落，可直接整体替换，并保留目标列的语言、字形和文体习惯（例如校对简中列就输出完整简中结果）；不能只描述改法或写“参考另一版本”。",
-    "三语模式下，better=counterpart 表示另一非原文列（counterpartText）在该处表达更好：应以它为基准，在目标列原文上做最小化局部替换，只把不如另一列的词句换成更优写法并调整为目标列字形用词，保留目标列已正确通顺的部分；禁止抛开现有译文、仅凭原文重译整句。双语模式下原文 A 不是候选译文，不得直接复制进 B。",
-    "仅凭当前行不足以判断时（如代词、承接关系、省略主语、术语延续、上文伏笔或下文指代影响判断）返回 needsContext=true；有足够依据就给出明确判断，不要为保险而索要上下文。",
-    "不要猜测需要多少上下文，也不要说明上下文请求范围；程序会在 needsContext=true 时每轮自动补充当前行前后一行，直到你能判断或达到上限。",
-    "summary 必须与 semanticSame、needsEdit、better、revisedText 完全一致；不要出现 summary 说无需修改但 needsEdit=true，或 summary 建议优化但 needsEdit=false 的矛盾。",
-    "只返回 JSON，不要返回 Markdown 或额外解释；必须使用 outputSchema 中的英文键名，不要省略 summary，需要修改时不要省略 revisedText。",
-  ].join("\n"),
-  outputSchema: {
-    semanticSame: "boolean",
-    needsEdit: "boolean（目标列是否需要修改；与 semanticSame 分开判断）",
-    needsContext: "boolean",
-    better: "target | counterpart | neither | unclear（三语模式中 counterpart 表示另一非原文更好；双语模式中原文不是候选译文，需要修改时通常使用 neither）",
-    summary: "分析为什么需要或不需要修改；需要上下文时说明缺少哪类上下文；不要留空",
-    revisedText: "需要修改时，输出目标列修改后的完整句子或完整段落；better=counterpart 时须在目标列原文上做局部替换、把另一列更优的片段融入目标列，禁止抛开现有译文按原文重译；不需要修改或需要上下文则留空",
+const proofreadOutputSchema = {
+  semanticSame: "boolean",
+  needsEdit: "boolean（目标列是否需要修改；与 semanticSame 分开判断）",
+  needsContext: "boolean",
+  better: "target | counterpart | neither | unclear（三语模式中 counterpart 表示另一非原文更好；双语模式中原文不是候选译文，需要修改时通常使用 neither）",
+  summary: "分析为什么需要或不需要修改；需要上下文时说明缺少哪类上下文；不要留空",
+  revisedText: "需要修改时，输出目标列修改后的完整句子或完整段落；三语模式 better=counterpart 时须在目标列原文上做局部替换；不需要修改或需要上下文则留空",
+};
+
+const sharedProofreadInstructions = [
+  "你是严谨的翻译校对助手，目标是辅助人工校对，不替代人工最终判断。",
+  "semanticSame 与 needsEdit 必须分别判断；语义相同但表达生硬、翻译腔、遗漏语气或存在其他明确问题时，可以 semanticSame=true、needsEdit=true。",
+  "需要修改时，revisedText 必须是目标列修改后的完整句子或段落，可直接整体替换，并保留目标列的语言、字形和文体习惯；不能只描述改法。",
+  "仅凭当前行不足以判断时（如代词、承接关系、省略主语、术语延续、上文伏笔或下文指代影响判断）返回 needsContext=true；有足够依据就给出明确判断，不要为保险而索要上下文。",
+  "不要猜测需要多少上下文，也不要说明上下文请求范围；程序会在 needsContext=true 时逐轮补充相邻行。",
+  "summary 必须与 semanticSame、needsEdit、better、revisedText 完全一致。",
+  "只返回 JSON，不要返回 Markdown 或额外解释；必须使用 outputSchema 中的英文键名，不要省略 summary，需要修改时不要省略 revisedText。",
+];
+
+const proofreadPrompts = {
+  bilingual: {
+    system: [
+      ...sharedProofreadInstructions,
+      "当前是双语校对：A 是原文和语义依据，B 是唯一译文与唯一修改列。",
+      "semanticSame 表示 B 是否完整、准确地传达 A 的核心语义；needsEdit 表示 B 是否存在误译、漏译、增译、语气偏差、术语问题或不自然表达。",
+      "A 不是候选译文，不得把 A 直接复制进 B。不要假设存在另一份译文，也不要比较不存在的 counterpartText。",
+      "B 无需修改时 better=target；B 需要修改时通常 better=neither，并基于 A 对 B 做最小且完整的修订。",
+    ].join("\n"),
+    outputSchema: proofreadOutputSchema,
+  },
+  trilingual: {
+    system: [
+      ...sharedProofreadInstructions,
+      "当前是三语校对：A 是原文和准入边界，B、C 是同级非原文材料，不要默认任何一方更权威。",
+      "只修改用户选择的目标列；semanticSame 表示目标列与另一非原文列的核心语义是否相同，needsEdit 表示目标列结合 A 判断后是否需要修改。",
+      "若两份非原文不同但目标列更准确或更贴合 A，返回 semanticSame=false、needsEdit=false、better=target，不要建议修改目标列。",
+      "better=counterpart 表示另一非原文列更好：在目标列原文上做最小化局部替换，只融入更优片段并调整为目标列的字形和用词，保留目标列已正确通顺的部分；禁止抛开现有译文重新翻译整句。",
+    ].join("\n"),
+    outputSchema: proofreadOutputSchema,
   },
 };
+
+function proofreadPromptFor(mode) {
+  return mode === "bilingual" ? proofreadPrompts.bilingual : proofreadPrompts.trilingual;
+}
+
+const proofreadPrompt = proofreadPrompts.trilingual;
 
 const contextBudget = {
   maxRounds: 6,
@@ -150,7 +173,7 @@ function clientStatus() {
     logs: status.logs,
     results: Array.from(status.results.values()).sort((a, b) => a.index - b.index),
     providerDefaults,
-    proofreadPrompt,
+    proofreadPrompt: proofreadPromptFor(status.proofreadMode),
   };
 }
 
@@ -204,7 +227,7 @@ function cleanConfig(input = {}) {
     baseUrl: String(input.baseUrl || defaults.baseUrl).trim().replace(/\/+$/, ""),
     model: String(input.model || defaults.model).trim(),
     apiKey: String(input.apiKey || "").trim(),
-    systemPrompt: String(input.systemPrompt || proofreadPrompt.system).trim() || proofreadPrompt.system,
+    systemPrompt: String(input.systemPrompt || "").trim() || proofreadPromptFor(proofreadMode).system,
     completedIndexes: normalizeIndexSet(input.completedIndexes),
     monitorEnabled: Boolean(input.monitorEnabled),
   };
@@ -321,6 +344,9 @@ async function startProofread(input) {
   const { project, rows } = readRows();
   requireMatchingProjectSnapshot(config, project);
   config.proofreadMode = project.comparisonMode === "bilingual" ? "bilingual" : "trilingual";
+  if (!String(input.systemPrompt || "").trim()) {
+    config.systemPrompt = proofreadPromptFor(config.proofreadMode).system;
+  }
   if (config.proofreadMode === "bilingual") config.target = "cn";
   resetStatus(config, rows.length);
   const labels = {
@@ -758,7 +784,7 @@ function buildMessages(payload, config = {}) {
       maxRows: contextBudget.maxRows,
       maxChars: contextBudget.maxChars,
     },
-    outputSchema: proofreadPrompt.outputSchema,
+    outputSchema: proofreadPromptFor(bilingualMode ? "bilingual" : "trilingual").outputSchema,
     row: {
       index: payload.row.index,
       source: payload.row.jp || "",
@@ -778,7 +804,7 @@ function buildMessages(payload, config = {}) {
     ? "当前是双语校对：A 是原文，B 是唯一修改列。只能修改 B，并以 A 为语义依据；A 不是可直接复制进 B 的候选译文。需要修改时必须输出符合 B 语言和文体的完整 revisedText。"
     : "当前是三语校对：A 是原文，B、C 是同级非原文。只修改用户选择的目标列，并同时参考 A 与另一个非原文列。";
   return [
-    { role: "system", content: `${config.systemPrompt || proofreadPrompt.system}\n${modeSystem}` },
+    { role: "system", content: `${config.systemPrompt || proofreadPromptFor(bilingualMode ? "bilingual" : "trilingual").system}\n${modeSystem}` },
     { role: "user", content: JSON.stringify(user, null, 2) },
   ];
 }
@@ -993,6 +1019,8 @@ module.exports = {
   listModels,
   providerDefaults,
   proofreadPrompt,
+  proofreadPromptFor,
+  proofreadPrompts,
   startProofread,
   stopProofread,
 };
