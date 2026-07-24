@@ -12,6 +12,38 @@ function reportProgress(percent, label, current = 0, total = 0) {
   console.log(`${progressPrefix}${JSON.stringify({ percent, label, current, total })}`);
 }
 
+function resolveModelOptions(models, selected = "") {
+  const values = [];
+  const seen = new Set();
+  for (const model of models || []) {
+    const value = String(typeof model === "string" ? model : model?.id || "").trim();
+    if (!value || value === "custom" || seen.has(value)) continue;
+    seen.add(value);
+    values.push(value);
+  }
+
+  const current = String(selected || "").trim();
+  return {
+    models: values,
+    options: [...values, "custom"],
+    selected: seen.has(current) ? current : values[0] || "custom",
+  };
+}
+
+function normalizeApiBaseUrl(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function restorableModelOptions(saved) {
+  if (!saved || typeof saved !== "object") return [];
+  const baseUrl = normalizeApiBaseUrl(saved.baseUrl);
+  const optionsBaseUrl = normalizeApiBaseUrl(saved.modelOptionsBaseUrl);
+  if (!baseUrl || !optionsBaseUrl || baseUrl !== optionsBaseUrl) return [];
+  return Array.isArray(saved.modelOptions)
+    ? saved.modelOptions.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
 const fallbackPgaTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <pgr:powergrep xmlns:pgr="http://www.powergrep.com/powergrep52.xsd" version="5.2">
 \t<actionfile>
@@ -2065,6 +2097,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
   </div>
   <script id="rowData" type="application/json">${rowsJson}</script>
   <script>
+    ${resolveModelOptions.toString()}
+    ${normalizeApiBaseUrl.toString()}
+    ${restorableModelOptions.toString()}
+
     const storageKey = ${JSON.stringify(storageKey)};
     const pageMeta = ${JSON.stringify(clientMeta)};
     const pgaTemplate = ${pgaTemplateJson};
@@ -2314,6 +2350,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         baseUrl: aiIds.baseUrl.value,
         model: aiIds.model.value,
         modelOptions: aiModelOptions,
+        modelOptionsBaseUrl: aiModelOptions.length ? normalizeApiBaseUrl(aiIds.baseUrl.value) : "",
         apiKey: aiIds.apiKey.value,
         proofreadMode: aiIds.proofreadMode.value,
         target: aiIds.target.value,
@@ -2341,9 +2378,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         aiIds.baseUrl.value = saved.baseUrl;
         aiIds.baseUrl.dataset.touched = "1";
       }
-      const savedModelOptions = Array.isArray(saved.modelOptions)
-        ? saved.modelOptions.map((item) => String(item || "").trim()).filter(Boolean)
-        : [];
+      const savedModelOptions = restorableModelOptions(saved);
       if (savedModelOptions.length) {
         setModelOptions(savedModelOptions, { selected: saved.model });
         aiIds.model.dataset.touched = "1";
@@ -3619,30 +3654,24 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
     }
 
-    function setModelOptions(models, { selected = aiIds.model.value, replace = true } = {}) {
-      const current = selected || aiIds.model.value;
-      const unique = [];
-      const seen = new Set();
-      const values = (models || []).map((model) => typeof model === "string" ? model : model?.id);
-      for (const value of [current, ...values, "custom"]) {
-        if (!value || seen.has(value)) continue;
-        seen.add(value);
-        unique.push(value);
-      }
-      if (replace) aiModelOptions = unique.filter((value) => value !== "custom");
-      aiIds.model.replaceChildren(...unique.map((value) => {
+    function setModelOptions(models, { selected = aiIds.model.value } = {}) {
+      const resolved = resolveModelOptions(models, selected);
+      aiModelOptions = resolved.models;
+      aiIds.model.replaceChildren(...resolved.options.map((value) => {
         const item = document.createElement("option");
         item.value = value;
         item.textContent = value === "custom" ? "自定义..." : value;
         return item;
       }));
-      aiIds.model.value = current && seen.has(current) ? current : unique[0] || "";
+      aiIds.model.value = resolved.selected;
       syncEnhancedSelect(aiIds.model);
     }
 
     async function refreshAiModels() {
       aiIds.refreshModels.disabled = true;
       const previousStatus = aiIds.status.textContent;
+      const requestedProvider = aiIds.provider.value;
+      const requestedBaseUrl = normalizeApiBaseUrl(aiIds.baseUrl.value);
       setTemporaryStatus("正在获取可用模型...", 15000);
       try {
         const response = await fetch("/api/ai-proofread/models", {
@@ -3656,6 +3685,11 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
+        const currentBaseUrl = normalizeApiBaseUrl(aiIds.baseUrl.value);
+        if (aiIds.provider.value !== requestedProvider || currentBaseUrl !== requestedBaseUrl) {
+          setTemporaryStatus("接口地址已变更，已忽略旧地址返回的模型列表。", 5000);
+          return;
+        }
         const models = data.models?.models || data.models || [];
         const defaultModel = providerDefaults[aiIds.provider.value]?.model || "";
         const wasDefault = !aiIds.model.dataset.touched || aiIds.model.value === defaultModel;
@@ -3701,12 +3735,12 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     });
     aiIds.baseUrl.addEventListener("input", () => {
       aiIds.baseUrl.dataset.touched = "1";
+      aiIds.model.dataset.touched = "";
+      setModelOptions([], { selected: "" });
       setTemporaryStatus("地址已修改，可点击刷新获取模型列表。", 5000);
       saveAiConfig();
     });
     aiIds.baseUrl.addEventListener("change", () => {
-      aiModelOptions = [];
-      setModelOptions([], { replace: false });
       setTemporaryStatus("地址已更新，可点击刷新获取模型列表。", 8000);
       saveAiConfig();
     });
@@ -3886,5 +3920,7 @@ if (require.main === module) {
 module.exports = {
   alignRows,
   makeHtml,
+  restorableModelOptions,
+  resolveModelOptions,
   toCsv,
 };

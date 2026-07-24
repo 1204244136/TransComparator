@@ -1,7 +1,46 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { makeHtml, toCsv } = require("./build-compare");
+const {
+  makeHtml,
+  restorableModelOptions,
+  resolveModelOptions,
+  toCsv,
+} = require("./build-compare");
+
+test("model refresh replaces models from the previous API base URL", () => {
+  const result = resolveModelOptions([
+    { id: "new-model-1" },
+    { id: "new-model-2" },
+  ], "old-model");
+
+  assert.deepEqual(result.models, ["new-model-1", "new-model-2"]);
+  assert.deepEqual(result.options, ["new-model-1", "new-model-2", "custom"]);
+  assert.equal(result.selected, "new-model-1");
+});
+
+test("model refresh preserves the selection only when the new API still provides it", () => {
+  const result = resolveModelOptions([
+    "shared-model",
+    "new-model",
+    "shared-model",
+  ], "shared-model");
+
+  assert.deepEqual(result.models, ["shared-model", "new-model"]);
+  assert.equal(result.selected, "shared-model");
+});
+
+test("model option cache is restored only for the API base URL that produced it", () => {
+  const cached = {
+    baseUrl: "https://new.example/v1/",
+    modelOptionsBaseUrl: "https://new.example/v1",
+    modelOptions: ["new-model"],
+  };
+
+  assert.deepEqual(restorableModelOptions(cached), ["new-model"]);
+  assert.deepEqual(restorableModelOptions({ ...cached, baseUrl: "https://other.example/v1" }), []);
+  assert.deepEqual(restorableModelOptions({ ...cached, modelOptionsBaseUrl: undefined }), []);
+});
 
 test("bilingual workbench fixes AI target to B and omits C", () => {
   const rows = [{
