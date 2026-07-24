@@ -562,7 +562,7 @@
       height: 100%;
       border-radius: inherit;
       background: var(--focus);
-      transition: width 180ms ease, background-color 180ms ease;
+      transition: width 520ms cubic-bezier(.22, .8, .25, 1), background-color 180ms ease;
     }
     .progress-bar.is-done { background: var(--ok-strong); }
     .progress-bar.is-failed { background: var(--danger-strong); }
@@ -1192,13 +1192,19 @@
         starting: "准备生成",
         "align:jp": "阶段 1/2：导出段落并完成跨语言对齐",
         build: "阶段 2/2：构建比较工作台",
+        archive: "保存项目快照",
         ready: "项目已就绪",
         done: "生成完成",
         failed: "生成失败",
       };
-      const label = labels[progress.step] || "正在生成";
+      const baseLabel = progress.detail || labels[progress.step] || "正在生成";
+      const current = Number(progress.current) || 0;
+      const total = Number(progress.total) || 0;
+      const label = total > 0
+        ? `${baseLabel} · ${current.toLocaleString()} / ${total.toLocaleString()}`
+        : baseLabel;
       ids.progressLabel.textContent = label;
-      ids.progressPercent.textContent = `${percent}%`;
+      ids.progressPercent.textContent = `${Number.isInteger(percent) ? percent : percent.toFixed(1)}%`;
       ids.progressBar.style.width = `${percent}%`;
       ids.progressBar.classList.toggle("is-done", progress.step === "done");
       ids.progressBar.classList.toggle("is-failed", progress.step === "failed");
@@ -1403,7 +1409,7 @@
     validateUnique();
     refreshPipeline();
     refreshAiStatus();
-    setInterval(refreshPipeline, 1500);
+    setInterval(refreshPipeline, 700);
     setInterval(refreshAiStatus, 1500);
   </script>
 </body>

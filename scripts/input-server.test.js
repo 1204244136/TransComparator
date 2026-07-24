@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
-const { saveUploadedInput } = require("./input-server");
+const { mapCommandProgress, parseProgressMessage, saveUploadedInput } = require("./input-server");
 
 function uploadPayload(role, name, text, comparisonMode = "bilingual") {
   return {
@@ -40,5 +40,32 @@ test("role upload rejects unsupported extensions", () => {
   assert.throws(
     () => saveUploadedInput(uploadPayload("jp", "source.exe", "not text")),
     /不支持的文件类型/,
+  );
+});
+
+test("machine progress messages are parsed and clamped", () => {
+  const message = parseProgressMessage(
+    '@@transcomparator-progress@@{"percent":125,"label":"编码原文向量","current":256,"total":1000}',
+  );
+  assert.deepEqual(message, {
+    percent: 100,
+    label: "编码原文向量",
+    current: 256,
+    total: 1000,
+  });
+  assert.equal(parseProgressMessage("ordinary command output"), null);
+  assert.equal(parseProgressMessage("@@transcomparator-progress@@not-json"), null);
+});
+
+test("command progress maps local work into its global pipeline range", () => {
+  assert.deepEqual(
+    mapCommandProgress({ percent: 50, label: "编码原文向量", current: 512, total: 1024 }, "align:jp", { start: 2, end: 84 }),
+    {
+      current: 512,
+      total: 1024,
+      percent: 43,
+      step: "align:jp",
+      detail: "编码原文向量",
+    },
   );
 });

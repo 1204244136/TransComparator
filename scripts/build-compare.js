@@ -5,6 +5,13 @@ const { resolveInputSelection } = require("./input-selection");
 const { providerDefaults, proofreadPrompt } = require("./ai-proofread");
 const { createProjectContext, rowSignature } = require("./project-context");
 
+const progressPrefix = "@@transcomparator-progress@@";
+
+function reportProgress(percent, label, current = 0, total = 0) {
+  if (process.env.TRANS_COMPARATOR_MACHINE_PROGRESS !== "1") return;
+  console.log(`${progressPrefix}${JSON.stringify({ percent, label, current, total })}`);
+}
+
 const fallbackPgaTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <pgr:powergrep xmlns:pgr="http://www.powergrep.com/powergrep52.xsd" version="5.2">
 \t<actionfile>
@@ -3749,13 +3756,19 @@ function toCsv(rows, comparisonMode = "trilingual") {
 async function main() {
   fs.mkdirSync(outputDir, { recursive: true });
 
+  reportProgress(5, "读取段落与对齐结果");
   const selection = await resolveInputSelection({ allowPrompt: false });
   const { tw, cn, jp } = await loadParagraphs(selection);
+  reportProgress(28, "合并非原文对齐组");
   const rows = alignRows(cn, tw, jp, selection.comparisonMode);
+  reportProgress(58, "整理比较行", rows.length, rows.length);
   const projectContext = createProjectContext(selection, rows);
   const pgaTemplate = loadPgaTemplate();
 
-  fs.writeFileSync(path.join(outputDir, "translation-compare.html"), makeHtml(rows, selection, projectContext, pgaTemplate), "utf8");
+  reportProgress(70, "渲染工作台页面");
+  const html = makeHtml(rows, selection, projectContext, pgaTemplate);
+  fs.writeFileSync(path.join(outputDir, "translation-compare.html"), html, "utf8");
+  reportProgress(86, "写入导出文件");
   fs.writeFileSync(path.join(outputDir, "translation-compare.csv"), toCsv(rows, selection.comparisonMode), "utf8");
   const rowsWithSignature = rows.map((row) => ({ ...row, signature: rowSignature(row) }));
   fs.writeFileSync(path.join(outputDir, "translation-compare.json"), JSON.stringify({
@@ -3766,6 +3779,7 @@ async function main() {
     rowsSignature: projectContext.rowsSignature,
     rows: rowsWithSignature,
   }, null, 2), "utf8");
+  reportProgress(100, "比较工作台构建完成", rows.length, rows.length);
 
   console.log(`JP paragraphs: ${jp.length}`);
   console.log(`CN paragraphs: ${cn.length}`);

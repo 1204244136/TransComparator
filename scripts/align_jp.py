@@ -22,10 +22,13 @@ ALIGNMENT = OUT / "jp-align.json"
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 PIVOT_LANG = os.environ.get("TRANS_COMPARATOR_JP_PIVOT", "cn")
 BATCH_SIZE = 32
+REPORT_BATCH_SIZE = 256
 SEARCH_WINDOW = 24
 MAX_CHARS = 420
 PROGRESS_ENV = os.environ.get("TRANS_COMPARATOR_PROGRESS")
 SHOW_PROGRESS = PROGRESS_ENV.lower() not in ("0", "false", "no") if PROGRESS_ENV is not None else sys.stderr.isatty()
+MACHINE_PROGRESS = os.environ.get("TRANS_COMPARATOR_MACHINE_PROGRESS") == "1"
+PROGRESS_PREFIX = "@@transcomparator-progress@@"
 MOVES = (
     (1, 1),
     (1, 2),
@@ -52,6 +55,18 @@ def configure_progress_output() -> None:
         transformers_logging.enable_progress_bar()
     else:
         transformers_logging.disable_progress_bar()
+
+
+def report_progress(percent: float, label: str, current: int = 0, total: int = 0) -> None:
+    if not MACHINE_PROGRESS:
+        return
+    payload = {
+        "percent": round(max(0.0, min(100.0, percent)), 1),
+        "label": label,
+        "current": current,
+        "total": total,
+    }
+    print(f"{PROGRESS_PREFIX}{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}", flush=True)
 
 
 def command_output(command: list[str]) -> str:
@@ -163,15 +178,47 @@ def trimmed(text: str) -> str:
     return "".join(chars[:MAX_CHARS])
 
 
-def encode(model: SentenceTransformer, texts: list[str], device: str) -> np.ndarray:
-    return model.encode(
-        [trimmed(text) for text in texts],
-        batch_size=BATCH_SIZE,
-        normalize_embeddings=True,
-        convert_to_numpy=True,
-        show_progress_bar=SHOW_PROGRESS,
-        device=device,
-    )
+def encode(
+    model: SentenceTransformer,
+    texts: list[str],
+    device: str,
+    progress_start: float,
+    progress_end: float,
+    label: str,
+) -> np.ndarray:
+    trimmed_texts = [trimmed(text) for text in texts]
+    total = len(trimmed_texts)
+    if not total:
+        report_progress(progress_end, label, 0, 0)
+        return np.empty((0, model.get_sentence_embedding_dimension()), dtype=np.float32)
+
+    if not MACHINE_PROGRESS:
+        return model.encode(
+            trimmed_texts,
+            batch_size=BATCH_SIZE,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=SHOW_PROGRESS,
+            device=device,
+        )
+
+    batches = []
+    for start in range(0, total, REPORT_BATCH_SIZE):
+        chunk = trimmed_texts[start : start + REPORT_BATCH_SIZE]
+        batches.append(
+            model.encode(
+                chunk,
+                batch_size=BATCH_SIZE,
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+                device=device,
+            )
+        )
+        current = min(total, start + len(chunk))
+        percent = progress_start + ((progress_end - progress_start) * current / total)
+        report_progress(percent, label, current, total)
+    return np.concatenate(batches, axis=0)
 
 
 def group_vector(vecs: np.ndarray, start: int, size: int) -> np.ndarray:
@@ -199,6 +246,8 @@ def align_groups(jp_vecs: np.ndarray, tw_vecs: np.ndarray) -> list[dict]:
     dp[0, 0] = 0
 
     for i in range(jp_count + 1):
+        if i % max(1, jp_count // 100) == 0 or i == jp_count:
+            report_progress(78 + (19 * i / max(1, jp_count)), "生成稳定对齐组", i, jp_count)
         expected = round((i / max(1, jp_count)) * tw_count)
         j_start = max(0, expected - SEARCH_WINDOW)
         j_end = min(tw_count, expected + SEARCH_WINDOW)
@@ -263,6 +312,8 @@ def align(jp_vecs: np.ndarray, tw_vecs: np.ndarray) -> list[dict]:
     last_tw = 0
 
     for jp_idx in range(jp_count):
+        if jp_idx % max(1, jp_count // 60) == 0:
+            report_progress(70 + (8 * jp_idx / max(1, jp_count)), "计算段落映射", jp_idx, jp_count)
         expected = round((jp_idx / max(1, jp_count - 1)) * (tw_count - 1))
         center = max(expected, last_tw)
         start = max(0, center - SEARCH_WINDOW)
@@ -293,6 +344,7 @@ def align(jp_vecs: np.ndarray, tw_vecs: np.ndarray) -> list[dict]:
 
 
 def main() -> None:
+    report_progress(9, "加载段落数据")
     data = json.loads(PARAGRAPHS.read_text(encoding="utf-8"))
     jp = data["jp"]
     comparison_mode = data.get("comparisonMode", "trilingual")
@@ -301,21 +353,26 @@ def main() -> None:
         raise ValueError(f"Unknown pivot language: {pivot_lang}")
     pivot = data[pivot_lang]
 
+    report_progress(10, "检测计算设备")
     device = select_device()
     print(f"device: {device}")
     if device == "cuda":
         print(f"gpu: {torch.cuda.get_device_name(0)}")
 
+    report_progress(12, "加载语义模型")
     model = SentenceTransformer(MODEL_NAME, device=device)
+    report_progress(16, "语义模型就绪")
     jp_texts = [item["text"] for item in jp]
     pivot_texts = [item["cnText"] for item in pivot]
 
     print("encoding jp")
-    jp_vecs = encode(model, jp_texts, device)
+    jp_vecs = encode(model, jp_texts, device, 16, 50, "编码原文向量")
     print(f"encoding {pivot_lang}")
-    pivot_vecs = encode(model, pivot_texts, device)
+    pivot_vecs = encode(model, pivot_texts, device, 50, 70, "编码非原文向量")
 
+    report_progress(70, "计算段落映射", 0, len(jp_vecs))
     mapping = align(jp_vecs, pivot_vecs)
+    report_progress(78, "生成稳定对齐组", 0, len(jp_vecs))
     groups = align_groups(jp_vecs, pivot_vecs)
     for item in mapping:
         item["pivotIndex"] = item["twIndex"]
@@ -338,6 +395,7 @@ def main() -> None:
         "groups": groups,
     }
     ALIGNMENT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    report_progress(100, "跨语言对齐完成")
     print(f"wrote {ALIGNMENT}")
 
 

@@ -38,6 +38,7 @@ const host = "127.0.0.1";
 const compareHtmlFile = path.join(rootDir, "out", "translation-compare.html");
 const importedInputsDir = path.join(rootDir, "out", "imported-inputs");
 const maxUploadBytes = 80 * 1024 * 1024;
+const progressPrefix = "@@transcomparator-progress@@";
 
 function resolveNpmCommand() {
   if (process.env.TRANSCOMPARATOR_NPM_CMD) return process.env.TRANSCOMPARATOR_NPM_CMD;
@@ -118,6 +119,52 @@ function filePayload(file) {
     name: path.basename(file),
     ext: path.extname(file).slice(1).toLowerCase(),
     size: stat.size,
+  };
+}
+
+function parseProgressMessage(line) {
+  const text = String(line || "").trim();
+  if (!text.startsWith(progressPrefix)) return null;
+  try {
+    const message = JSON.parse(text.slice(progressPrefix.length));
+    const percent = Number(message.percent);
+    if (!Number.isFinite(percent)) return null;
+    return {
+      ...message,
+      percent: Math.max(0, Math.min(100, percent)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function mapCommandProgress(message, step, range = {}) {
+  const start = Number(range.start) || 0;
+  const end = Number.isFinite(Number(range.end)) ? Number(range.end) : 100;
+  const percent = start + ((end - start) * message.percent / 100);
+  return {
+    current: Number(message.current) || 0,
+    total: Number(message.total) || 0,
+    percent: Math.round(percent * 10) / 10,
+    step,
+    detail: String(message.label || "").trim(),
+  };
+}
+
+function createLineConsumer(onLine) {
+  let buffered = "";
+  return {
+    write(text) {
+      buffered += String(text || "").replace(/\r\n?/g, "\n");
+      const lines = buffered.split("\n");
+      buffered = lines.pop() || "";
+      for (const line of lines) onLine(line);
+    },
+    end(text = "") {
+      this.write(text);
+      if (buffered) onLine(buffered);
+      buffered = "";
+    },
   };
 }
 
@@ -218,10 +265,18 @@ function saveInputSelection(payload) {
   return { selection, selectionFile };
 }
 
-function runCommand(command, args, step, progress) {
+function runCommand(command, args, step, progressRange) {
   return new Promise((resolve, reject) => {
     pipeline.step = step;
-    if (progress) pipeline.progress = { ...progress, step };
+    if (progressRange) {
+      pipeline.progress = {
+        current: 0,
+        total: 0,
+        percent: progressRange.start,
+        step,
+        detail: progressRange.label || "",
+      };
+    }
     pushLog(`> ${[command, ...args].join(" ")}`);
     const spawnOptions = {
       cwd: rootDir,
@@ -230,6 +285,7 @@ function runCommand(command, args, step, progress) {
         ...process.env,
         PYTHONIOENCODING: process.env.PYTHONIOENCODING || "utf-8",
         PYTHONUTF8: process.env.PYTHONUTF8 || "1",
+        TRANS_COMPARATOR_MACHINE_PROGRESS: "1",
       },
     };
     const stdoutDecoder = new StringDecoder("utf8");
@@ -238,12 +294,22 @@ function runCommand(command, args, step, progress) {
       ? spawn(process.env.ComSpec || "cmd.exe", ["/d", "/c", makeWindowsCommand(command, args)], spawnOptions)
       : spawn(command, args, spawnOptions);
 
-    child.stdout.on("data", (chunk) => pushLog(stdoutDecoder.write(chunk)));
-    child.stderr.on("data", (chunk) => pushLog(stderrDecoder.write(chunk)));
+    const consumeLine = (line) => {
+      const message = parseProgressMessage(line);
+      if (message && progressRange) {
+        pipeline.progress = mapCommandProgress(message, step, progressRange);
+        return;
+      }
+      pushLog(line);
+    };
+    const stdoutConsumer = createLineConsumer(consumeLine);
+    const stderrConsumer = createLineConsumer(consumeLine);
+    child.stdout.on("data", (chunk) => stdoutConsumer.write(stdoutDecoder.write(chunk)));
+    child.stderr.on("data", (chunk) => stderrConsumer.write(stderrDecoder.write(chunk)));
     child.on("error", reject);
     child.on("close", (code) => {
-      pushLog(stdoutDecoder.end());
-      pushLog(stderrDecoder.end());
+      stdoutConsumer.end(stdoutDecoder.end());
+      stderrConsumer.end(stderrDecoder.end());
       if (code === 0) {
         resolve();
         return;
@@ -273,9 +339,17 @@ async function runPipeline() {
   pipeline.finishedAt = null;
   pipeline.logs = [];
   try {
-    await runCommand(npmCommand, ["run", "align:jp"], "align:jp", { current: 0, total: 2, percent: 10 });
-    pipeline.progress = { current: 1, total: 2, percent: 50, step: "build" };
-    await runCommand(npmCommand, ["run", "build"], "build", { current: 1, total: 2, percent: 60 });
+    await runCommand(npmCommand, ["run", "align:jp"], "align:jp", {
+      start: 2,
+      end: 84,
+      label: "检查运行环境",
+    });
+    await runCommand(npmCommand, ["run", "build"], "build", {
+      start: 84,
+      end: 98,
+      label: "加载对齐结果",
+    });
+    pipeline.progress = { current: 0, total: 0, percent: 99, step: "archive", detail: "归档项目快照" };
     const project = archiveCurrentProject();
     pipeline.step = "done";
     pipeline.progress = { current: 2, total: 2, percent: 100, step: "done" };
@@ -504,5 +578,7 @@ if (require.main === module) {
 module.exports = {
   createServer,
   host,
+  mapCommandProgress,
+  parseProgressMessage,
   saveUploadedInput,
 };
