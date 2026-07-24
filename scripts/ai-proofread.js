@@ -43,6 +43,7 @@ const proofreadOutputSchema = {
   needsEdit: "boolean（目标列是否需要修改；与 semanticSame 分开判断）",
   needsContext: "boolean",
   better: "target | counterpart | neither | unclear（三语模式中 counterpart 表示另一非原文更好；双语模式中原文不是候选译文，需要修改时通常使用 neither）",
+  severity: "none | minor | major | critical（仅 needsEdit=true 且能够明确判断时使用 minor、major 或 critical；否则必须为 none）",
   summary: "分析为什么需要或不需要修改；需要上下文时说明缺少哪类上下文；不要留空",
   revisedText: "需要修改时，输出目标列修改后的完整句子或完整段落；三语模式 better=counterpart 时须在目标列原文上做局部替换；不需要修改或需要上下文则留空",
 };
@@ -53,8 +54,10 @@ const sharedProofreadInstructions = [
   "需要修改时，revisedText 必须是目标列修改后的完整句子或段落，可直接整体替换，并保留目标列的语言、字形和文体习惯；不能只描述改法。",
   "仅凭当前行不足以判断时（如代词、承接关系、省略主语、术语延续、上文伏笔或下文指代影响判断）返回 needsContext=true；有足够依据就给出明确判断，不要为保险而索要上下文。",
   "不要猜测需要多少上下文，也不要说明上下文请求范围；程序会在 needsContext=true 时逐轮补充相邻行。",
+  "严重程度采用 MQM 风格分级：minor（轻微）指不改变意义、不影响使用的局部流畅度、语法、标点或文体问题；major（严重）指影响准确性、完整性或可用性的误译、漏译、增译、关键术语、语气或逻辑关系问题；critical（致命）指颠倒或严重歪曲核心意义、破坏关键人名/数值/否定/指令，或可能造成安全、法律、声誉等高风险后果的问题。critical 应谨慎使用。",
+  "仅当 needsEdit=true、needsContext=false 且判断明确时，severity 才能为 minor、major 或 critical；无需修改或待人工确认时 severity 必须为 none。",
   "summary 必须与 semanticSame、needsEdit、better、revisedText 完全一致。",
-  "只返回 JSON，不要返回 Markdown 或额外解释；必须使用 outputSchema 中的英文键名，不要省略 summary，需要修改时不要省略 revisedText。",
+  "只返回 JSON，不要返回 Markdown 或额外解释；必须使用 outputSchema 中的英文键名，不要省略 summary，需要修改时不要省略 severity 和 revisedText。",
 ];
 
 const proofreadPrompts = {
@@ -865,11 +868,16 @@ function parseDecision(content) {
   );
   const semanticSame = parseBoolean(data.semanticSame, false);
   const better = normalizeBetter(data.better);
+  const needsEdit = parseNeedsEdit(data.needsEdit, semanticSame, better);
   return normalizeDecision({
     semanticSame,
-    needsEdit: parseNeedsEdit(data.needsEdit, semanticSame, better),
+    needsEdit,
     needsContext: parseBoolean(data.needsContext, false),
     better,
+    severity: normalizeSeverity(
+      firstString(data.severity, data.issueSeverity, data["严重程度"], data["严重性"]),
+      needsEdit,
+    ),
     summary,
     suggestion: String(data.suggestion || "").trim(),
     replacement: String(data.replacement || "").trim(),
@@ -913,6 +921,15 @@ function parseNeedsEdit(value, semanticSame, better) {
   return false;
 }
 
+function normalizeSeverity(value, needsEdit = true) {
+  if (!needsEdit) return "none";
+  const text = String(value || "").trim().toLowerCase();
+  if (["critical", "致命", "高", "high"].includes(text)) return "critical";
+  if (["major", "严重", "重大", "主要", "中", "medium"].includes(text)) return "major";
+  if (["minor", "轻微", "次要", "低", "low"].includes(text)) return "minor";
+  return "major";
+}
+
 function normalizeDecision(decision) {
   const intent = summaryIntent(decision.summary);
   let next = { ...decision };
@@ -934,6 +951,9 @@ function normalizeDecision(decision) {
   if (!next.needsEdit && next.revisedText) {
     next = { ...next, revisedText: "" };
   }
+  next.severity = next.needsEdit && !next.needsContext && next.better !== "unclear"
+    ? normalizeSeverity(next.severity, true)
+    : "none";
   return next;
 }
 
@@ -986,10 +1006,12 @@ function decisionToResult(row, decision, targetLabel, counterpartLabel) {
   lines.push(`语义是否相同：${decision.semanticSame ? "相同" : "不同"}`);
   if (decision.better === "counterpart") {
     lines.push("是否需要修改：是");
+    lines.push(severityLine(decision));
     lines.push(analysisLine(decision, decision.revisedText ? "" : decision.suggestion || `参考${counterpartLabel}修订${targetLabel}。`));
     if (decision.revisedText) lines.push(`修改结果：${decision.revisedText}`);
   } else if (decision.better === "neither") {
     lines.push("是否需要修改：是");
+    lines.push(severityLine(decision));
     lines.push(analysisLine(decision, decision.revisedText ? "" : decision.suggestion || "按原文重新整理译文。"));
     if (decision.revisedText) lines.push(`修改结果：${decision.revisedText}`);
   } else {
@@ -1007,6 +1029,11 @@ function decisionToResult(row, decision, targetLabel, counterpartLabel) {
   };
 }
 
+function severityLine(decision) {
+  const labels = { minor: "轻微", major: "严重", critical: "致命" };
+  return `严重程度：${labels[normalizeSeverity(decision.severity, true)] || "严重"}`;
+}
+
 function analysisLine(decision, fallback = "") {
   const text = [decision.summary, fallback].filter(Boolean).join(" ");
   return text ? `分析：${text}` : "";
@@ -1016,7 +1043,10 @@ module.exports = {
   buildMessages,
   clearProofreadCache,
   clientStatus,
+  decisionToResult,
   listModels,
+  normalizeSeverity,
+  parseDecision,
   providerDefaults,
   proofreadPrompt,
   proofreadPromptFor,

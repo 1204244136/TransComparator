@@ -39,6 +39,9 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(html, /\.ai-secondary\s*\{[^}]*align-items: start;/);
   assert.match(html, /translation-compare-ai-prompt-v1:/);
   assert.match(html, /pageMeta\.projectKey \|\| "unscoped"/);
+  assert.match(html, /data-issue-severity="critical"/);
+  assert.match(html, /严重程度/);
+  assert.match(html, /issueSeverityFilter/);
 
   const script = html.split("<script>")[1].split("</script>")[0];
   const globalConfigWriter = script.match(/function saveAiConfig\(\)[\s\S]*?function saveAiPrompt/)[0];
@@ -79,6 +82,7 @@ test("trilingual workbench lets AI target either B or C", () => {
   assert.match(html, /<option value="cn">B 版本<\/option>/);
   assert.match(html, /<option value="tw">C 版本<\/option>/);
   assert.match(html, /目标可选非原文 B 或 C/);
+  assert.match(html, /AI 问题严重程度/);
 
   const script = html.split("<script>")[1].split("</script>")[0];
   assert.doesNotThrow(() => new Function(script));

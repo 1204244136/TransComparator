@@ -1723,6 +1723,33 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       word-break: break-word;
       white-space: pre-wrap;
     }
+    .issue-severity-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      width: fit-content;
+      padding: 1px 7px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .issue-severity-badge.is-critical {
+      border-color: #e6aaa5;
+      background: var(--review);
+      color: var(--review-strong);
+    }
+    .issue-severity-badge.is-major {
+      border-color: #ead08a;
+      background: var(--watch);
+      color: var(--watch-strong);
+    }
+    .issue-severity-badge.is-minor {
+      border-color: #b8cee9;
+      background: var(--info);
+      color: var(--focus-hover);
+    }
     .copy-revision {
       flex: 0 0 auto;
       min-height: 24px;
@@ -1878,6 +1905,15 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
               <button type="button" data-ai-result="modify">需改</button>
               <button type="button" data-ai-result="same">不改</button>
               <button type="button" data-ai-result="unclear">待判</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <span class="filter-group-label" title="按 MQM 风格的问题严重程度筛选">分级</span>
+            <div class="segmented" role="group" aria-label="AI 问题严重程度">
+              <button type="button" class="is-active" data-issue-severity="all">全部</button>
+              <button type="button" data-issue-severity="critical" title="核心意义严重失真，或存在安全、法律等高风险后果">致命</button>
+              <button type="button" data-issue-severity="major" title="影响准确性、完整性或可用性">严重</button>
+              <button type="button" data-issue-severity="minor" title="不改变意义的局部语言或文体问题">轻微</button>
             </div>
           </div>
           <button id="noteFilter" class="filter-chip" type="button" aria-pressed="false">有备注</button>
@@ -2050,6 +2086,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const query = document.getElementById("query");
     const severityButtons = Array.from(document.querySelectorAll("[data-severity]"));
     const aiResultButtons = Array.from(document.querySelectorAll("[data-ai-result]"));
+    const issueSeverityButtons = Array.from(document.querySelectorAll("[data-issue-severity]"));
     const noteFilter = document.getElementById("noteFilter");
     const doneFilter = document.getElementById("doneFilter");
     const showSource = document.getElementById("showSource");
@@ -2108,6 +2145,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     let filterTimer = 0;
     let severityFilter = "all";
     let aiResultFilter = "all";
+    let issueSeverityFilter = "all";
     let notesOnly = false;
     let doneMode = "all";
     let providerDefaults = pageMeta.providerDefaults || {};
@@ -2687,7 +2725,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const lines = String(note || "").split(/\\n+/).map((line) => line.trim()).filter(Boolean);
       if (!automatedNoteMarker(lines[0])) return null;
       if (isAiFailureNote(note)) return null;
-      const data = { semantic: "", modify: "", revision: "", analysis: "" };
+      const data = { semantic: "", modify: "", severity: "", revision: "", analysis: "" };
       let currentField = "";
       for (const line of lines.slice(1)) {
         if (line.startsWith("语义是否相同：")) {
@@ -2695,6 +2733,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           currentField = "";
         } else if (line.startsWith("是否需要修改：")) {
           data.modify = line.slice("是否需要修改：".length).trim();
+          currentField = "";
+        } else if (line.startsWith("严重程度：") || line.startsWith("问题严重程度：")) {
+          data.severity = normalizeIssueSeverity(line.replace(/^(问题)?严重程度：/, "").trim());
           currentField = "";
         } else if (line.startsWith("修改结果：") || line.startsWith("修改后：") || line.startsWith("修改后文本：")) {
           data.revision = line.replace(/^(修改结果|修改后|修改后文本)：/, "").trim();
@@ -2715,7 +2756,19 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           currentField = "analysis";
         }
       }
-      return data.semantic || data.modify || data.revision || data.analysis ? data : null;
+      return data.semantic || data.modify || data.severity || data.revision || data.analysis ? data : null;
+    }
+
+    function normalizeIssueSeverity(value) {
+      const text = String(value || "").trim().toLowerCase();
+      if (["critical", "致命", "高", "high"].includes(text)) return "critical";
+      if (["major", "严重", "重大", "主要", "中", "medium"].includes(text)) return "major";
+      if (["minor", "轻微", "次要", "低", "low"].includes(text)) return "minor";
+      return "";
+    }
+
+    function issueSeverityLabel(severity) {
+      return { critical: "致命", major: "严重", minor: "轻微" }[severity] || "";
     }
 
     function renderNoteSummary(noteText) {
@@ -2727,9 +2780,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const revision = note.revision
         ? '<div class="note-detail note-revision"><div class="note-detail-head"><span class="note-summary-key">修改结果</span><button type="button" class="copy-revision" data-copy-text="' + escapeHtml(note.revision) + '" title="复制修改结果">复制</button></div><div class="note-summary-value">' + escapeHtml(note.revision) + '</div></div>'
         : "";
+      const severity = note.severity
+        ? '<div class="note-summary-line"><span class="note-summary-key">严重程度</span><span class="issue-severity-badge is-' + note.severity + '">' + issueSeverityLabel(note.severity) + '</span></div>'
+        : "";
       return '<div class="note-summary">' +
         '<div class="note-summary-line"><span class="note-summary-key">语义</span><span class="note-summary-value">' + escapeHtml(note.semantic || "待人工判定") + '</span></div>' +
         '<div class="note-summary-line"><span class="note-summary-key">修改</span><span class="note-summary-value">' + escapeHtml(note.modify || "待人工判定") + '</span></div>' +
+        severity +
         analysis +
         revision +
       '</div>';
@@ -2980,6 +3037,11 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       return "unclear";
     }
 
+    function issueSeverityState(row) {
+      const note = parseAutomatedNote(notes[String(row.index)]?.note || "");
+      return note?.severity || "unrated";
+    }
+
     function currentAiSameRows() {
       return filteredRows.filter((row) => {
         const item = notes[String(row.index)];
@@ -2994,12 +3056,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const matchesQuery = !q || rowText(row).includes(q);
       const matchesSeverity = severityFilter === "all" || row.cls === severityFilter;
       const matchesAiResult = aiResultFilter === "all" || aiResultState(row) === aiResultFilter;
+      const matchesIssueSeverity = issueSeverityFilter === "all" || issueSeverityState(row) === issueSeverityFilter;
       const matchesNotes = !notesOnly || hasNote;
       const matchesDone =
         doneMode === "all" ||
         (doneMode === "open" && !isDone) ||
         (doneMode === "done" && isDone);
-      return matchesQuery && matchesSeverity && matchesAiResult && matchesNotes && matchesDone;
+      return matchesQuery && matchesSeverity && matchesAiResult && matchesIssueSeverity && matchesNotes && matchesDone;
     }
 
     function applyFilters({ reset = true } = {}) {
@@ -3125,6 +3188,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         applyFilters();
       });
     }
+    for (const button of issueSeverityButtons) {
+      button.addEventListener("click", () => {
+        issueSeverityFilter = button.dataset.issueSeverity;
+        for (const item of issueSeverityButtons) item.classList.toggle("is-active", item === button);
+        applyFilters();
+      });
+    }
     noteFilter.addEventListener("click", () => {
       notesOnly = !notesOnly;
       noteFilter.classList.toggle("is-active", notesOnly);
@@ -3188,10 +3258,12 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       query.value = "";
       severityFilter = "all";
       aiResultFilter = "all";
+      issueSeverityFilter = "all";
       notesOnly = false;
       doneMode = "all";
       for (const button of severityButtons) button.classList.toggle("is-active", button.dataset.severity === "all");
       for (const button of aiResultButtons) button.classList.toggle("is-active", button.dataset.aiResult === "all");
+      for (const button of issueSeverityButtons) button.classList.toggle("is-active", button.dataset.issueSeverity === "all");
       noteFilter.classList.remove("is-active");
       noteFilter.setAttribute("aria-pressed", "false");
       doneFilter.classList.remove("is-active");
@@ -3531,7 +3603,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       } else if ((ai.results || []).length && !ai.running && !isStatusMessageLocked()) {
         setRuntimeStatus("已忽略非当前项目快照的自动结果；当前项目备注保持独立。");
       }
-      if (appliedResult && (query.value.trim() || notesOnly || doneMode !== "all")) {
+      if (appliedResult && (query.value.trim() || notesOnly || doneMode !== "all" || aiResultFilter !== "all" || issueSeverityFilter !== "all")) {
         applyFilters({ reset: false });
       }
     }
