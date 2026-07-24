@@ -1878,9 +1878,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         </div>
         <div class="stats" aria-label="校对统计">
           <div class="stat"><strong>${stats.total}</strong>总行</div>
-          <div class="stat review"><strong>${stats.review}</strong>待细看</div>
-          <div class="stat watch"><strong>${stats.watch}</strong>需确认</div>
-          <div class="stat ok"><strong>${stats.ok}</strong>接近</div>
+          <div class="stat review" title="相似度低于 18%"><strong>${stats.review}</strong>较低相似度</div>
+          <div class="stat watch" title="相似度为 18% 至 35%"><strong>${stats.watch}</strong>中等相似度</div>
+          <div class="stat ok" title="相似度不低于 35%"><strong>${stats.ok}</strong>较高相似度</div>
           <div class="stat-divider" aria-hidden="true"></div>
           <div class="stat"><strong id="doneCount">0</strong>人工确认</div>
           <div class="stat"><strong id="aiDoneCount">0</strong>自动结果</div>
@@ -1890,12 +1890,12 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         <input id="query" type="search" placeholder="搜索原文、译文、备注">
         <div class="filter-panel" aria-label="筛选">
           <div class="filter-group">
-            <span class="filter-group-label">相似</span>
+            <span class="filter-group-label">相似度</span>
             <div class="segmented" role="group" aria-label="相似度状态">
               <button type="button" class="is-active" data-severity="all">全部</button>
-              <button type="button" data-severity="review">细看</button>
-              <button type="button" data-severity="watch">确认</button>
-              <button type="button" data-severity="ok">接近</button>
+              <button type="button" data-severity="review" title="相似度低于 18%">较低</button>
+              <button type="button" data-severity="watch" title="相似度为 18% 至 35%">中等</button>
+              <button type="button" data-severity="ok" title="相似度不低于 35%">较高</button>
             </div>
           </div>
           <div class="filter-group">
