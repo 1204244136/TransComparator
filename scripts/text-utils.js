@@ -19,9 +19,9 @@ const endMarkers = {
 };
 
 const chapterPatterns = {
-  tw: /^(第[一二三四五六七八九十]+卷\s+)?(序\s*章(?:\s+.*)?|行間\s*[一二三四五六七八九十]+|第[一二三四五六七八九十]+章(?:\s+.*)?|終章(?:\s+.*)?)\s*$/,
-  cn: /^(序\s*章(?:\s+.*)?|行间\s*[一二三四五六七八九十]+|第[一二三四五六七八九十]+章(?:\s+.*)?|终章(?:\s+.*)?)\s*$/,
-  jp: /^(序\s*章(?:\s+.*)?|行間\s*[一二三四五六七八九十]+|第[一二三四五六七八九十]+章(?:\s+.*)?|終章(?:\s+.*)?)\s*$/,
+  tw: /^(第[一二三四五六七八九十0-9０-９]+卷\s+)?(序\s*章(?:\s+.*)?|行間\s*[一二三四五六七八九十0-9０-９]+|第[一二三四五六七八九十0-9０-９]+(?:章|話)(?:\s+.*)?|終章(?:\s+.*)?)\s*$/,
+  cn: /^(序\s*章(?:\s+.*)?|行间\s*[一二三四五六七八九十0-9０-９]+|第[一二三四五六七八九十0-9０-９]+(?:章|话)(?:\s+.*)?|终章(?:\s+.*)?)\s*$/,
+  jp: /^(序\s*章(?:\s+.*)?|行間\s*[一二三四五六七八九十0-9０-９]+|第[一二三四五六七八九十0-9０-９]+(?:章|話)(?:\s+.*)?|終章(?:\s+.*)?)\s*$/,
 };
 
 const toCn = OpenCC.Converter({ from: "tw", to: "cn" });
@@ -174,9 +174,22 @@ function sliceMainDocument(text, lang, markers = {}) {
   const start = findBodyStart(text, lang, markers);
   const body = start === -1 ? text : text.slice(start);
   if (start === -1) return body;
-  const match = body.match(documentEndPatterns[lang]);
-  if (!match || match.index == null) return body;
-  return body.slice(0, match.index);
+  const pattern = documentEndPatterns[lang];
+  if (!pattern) return body;
+
+  // A combined EPUB can contain an intermediate afterword followed by another
+  // work. Only trim a back-matter marker when no later chapter heading appears
+  // before the next marker; otherwise keep scanning for the terminal marker.
+  const matcher = new RegExp(pattern.source, `${pattern.flags.replace(/g/g, "")}g`);
+  let match;
+  while ((match = matcher.exec(body)) !== null) {
+    const remainder = body.slice(match.index + match[0].length);
+    const nextMarker = remainder.search(pattern);
+    const section = nextMarker === -1 ? remainder : remainder.slice(0, nextMarker);
+    const hasLaterChapter = blockRanges(section).some((range) => Boolean(normalizeTitle(range.text, lang)));
+    if (!hasLaterChapter) return body.slice(0, match.index);
+  }
+  return body;
 }
 
 function sliceMainForInput(text, lang, inputMode = "document", markers = {}) {

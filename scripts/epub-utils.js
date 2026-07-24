@@ -398,8 +398,8 @@ async function readEpubText(file, options = {}) {
       return await readEpubTextWithPandoc(file, options);
     } catch (error) {
       if (converter === "pandoc") throw error;
-      if (error?.code && error.code !== "ENOENT") throw error;
-      console.warn("Pandoc not found; using built-in EPUB OPF/nav/spine reader.");
+      const detail = error?.stderr?.trim() || error?.message || "unknown error";
+      console.warn(`Pandoc EPUB conversion failed (${detail}); using built-in EPUB OPF/nav/spine reader.`);
     }
   }
 
