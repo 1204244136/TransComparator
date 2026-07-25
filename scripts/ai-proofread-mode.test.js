@@ -41,10 +41,19 @@ test("bilingual and trilingual workbenches use different default prompts", () =>
   assert.notEqual(bilingual, trilingual);
   assert.match(bilingual, /B 是唯一译文与唯一修改列/);
   assert.match(bilingual, /不要假设存在另一份译文/);
+  assert.match(bilingual, /EPUB 注释标记/);
   assert.match(trilingual, /B、C 是同级非原文材料/);
   assert.match(trilingual, /better=counterpart/);
   assert.match(trilingual, /MQM 风格分级/);
   assert.equal(proofreadPromptFor("bilingual").outputSchema.severity.includes("critical"), true);
+  assert.match(proofreadPromptFor("bilingual").outputSchema.revisedText, /原样保留目标列的 EPUB 注释标记/);
+});
+
+test("custom AI prompts still receive the mandatory noteref preservation rule", () => {
+  const messages = buildMessages(payload(), { proofreadMode: "bilingual", systemPrompt: "custom" });
+
+  assert.match(messages[0].content, /硬性格式约束/);
+  assert.match(messages[0].content, /noteref 注释标记必须.*逐字、原位保留/);
 });
 
 test("AI decisions normalize MQM-style severity only for definite edits", () => {

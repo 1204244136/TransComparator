@@ -41,13 +41,14 @@ const proofreadOutputSchema = {
   better: "target | counterpart | neither | unclear（三语模式中 counterpart 表示另一非原文更好；双语模式中原文不是候选译文，需要修改时通常使用 neither）",
   severity: "none | minor | major | critical（仅 needsEdit=true 且能够明确判断时使用 minor、major 或 critical；否则必须为 none）",
   summary: "分析为什么需要或不需要修改；需要上下文时说明缺少哪类上下文；不要留空",
-  revisedText: "需要修改时，输出目标列修改后的完整句子或完整段落；三语模式 better=counterpart 时须在目标列原文上做局部替换；不需要修改或需要上下文则留空",
+  revisedText: "需要修改时，输出目标列修改后的完整句子或完整段落，并原样保留目标列的 EPUB 注释标记；三语模式 better=counterpart 时须在目标列原文上做局部替换；不需要修改或需要上下文则留空",
 };
 
 const sharedProofreadInstructions = [
   "你是严谨的翻译校对助手，目标是辅助人工校对，不替代人工最终判断。",
   "semanticSame 与 needsEdit 必须分别判断；语义相同但表达生硬、翻译腔、遗漏语气或存在其他明确问题时，可以 semanticSame=true、needsEdit=true。",
   "需要修改时，revisedText 必须是目标列修改后的完整句子或段落，可直接整体替换，并保留目标列的语言、字形和文体习惯；不能只描述改法。",
+  "形如 <a ... epub:type=\"noteref\" ...><sup>㊟</sup></a> 的内容是 EPUB 注释标记，不属于正文语义。不得因其标签或属性差异判定翻译问题；revisedText 必须逐字保留目标列中的全部注释标记，包括属性、嵌套标签、字符、数量和位置，不得增加、删除、改写或移动。",
   "仅凭当前行不足以判断时（如代词、承接关系、省略主语、术语延续、上文伏笔或下文指代影响判断）返回 needsContext=true；有足够依据就给出明确判断，不要为保险而索要上下文。",
   "不要猜测需要多少上下文，也不要说明上下文请求范围；程序会在 needsContext=true 时逐轮补充相邻行。",
   "严重程度采用 MQM 风格分级：minor（轻微）指不改变意义、不影响使用的局部流畅度、语法、标点或文体问题；major（严重）指影响准确性、完整性或可用性的误译、漏译、增译、关键术语、语气或逻辑关系问题；critical（致命）指颠倒或严重歪曲核心意义、破坏关键人名/数值/否定/指令，或可能造成安全、法律、声誉等高风险后果的问题。critical 应谨慎使用。",
@@ -835,8 +836,9 @@ function buildMessages(payload, config = {}) {
   const modeSystem = bilingualMode
     ? "当前是双语校对：A 是原文，B 是唯一修改列。只能修改 B，并以 A 为语义依据；A 不是可直接复制进 B 的候选译文。需要修改时必须输出符合 B 语言和文体的完整 revisedText。"
     : "当前是三语校对：A 是原文，B、C 是同级非原文。只修改用户选择的目标列，并同时参考 A 与另一个非原文列。";
+  const markupSystem = "硬性格式约束：目标列中的 EPUB noteref 注释标记必须在 revisedText 中逐字、原位保留，不得改动其任何标签、属性或内容。";
   return [
-    { role: "system", content: `${config.systemPrompt || proofreadPromptFor(bilingualMode ? "bilingual" : "trilingual").system}\n${modeSystem}` },
+    { role: "system", content: `${config.systemPrompt || proofreadPromptFor(bilingualMode ? "bilingual" : "trilingual").system}\n${modeSystem}\n${markupSystem}` },
     { role: "user", content: JSON.stringify(user, null, 2) },
   ];
 }

@@ -21,6 +21,7 @@ const defaultDisplayLabels = {
 const defaultInlineMarkup = {
   ruby: true,
   bold: true,
+  noteref: true,
 };
 
 function normalizePath(value) {
@@ -87,6 +88,7 @@ function normalizeInlineMarkup(value = {}) {
   return {
     ruby: value.ruby !== false,
     bold: value.bold !== false,
+    noteref: value.noteref !== false,
   };
 }
 

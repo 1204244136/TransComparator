@@ -60,12 +60,65 @@ function normalizeInlineMarkupOptions(options = {}) {
   return {
     ruby: inlineMarkup.ruby !== false,
     bold: inlineMarkup.bold !== false,
+    noteref: inlineMarkup.noteref !== false,
   };
 }
 
-function normalizePreservedInlineMarkup(text, options = {}) {
+const noterefAnchorPattern = /<a\b(?=[^>]*(?:epub:type\s*=\s*["'][^"']*\bnoteref\b[^"']*["']|class\s*=\s*["'][^"']*\bnoteref\b[^"']*["']))[^>]*>[\s\S]*?<\/a\s*>/gi;
+
+function extractHtmlAttribute(markup, name) {
+  const match = String(markup || "").match(new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, "i"));
+  return match ? match[2] : "";
+}
+
+function normalizeNoterefHref(href) {
+  let value = String(href || "").trim();
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    // Keep malformed EPUB hrefs usable as lookup keys.
+  }
+  return value.toLowerCase().replace(/^#/, "").replace(/#/g, "_");
+}
+
+function extractNoterefMarkup(html) {
+  return [...String(html || "").matchAll(noterefAnchorPattern)].map((match) => ({
+    href: extractHtmlAttribute(match[0], "href"),
+    markup: match[0],
+  }));
+}
+
+function restorePandocNoterefMarkup(html, originalNoterefs = []) {
+  const byHref = new Map();
+  for (const item of originalNoterefs) {
+    const key = normalizeNoterefHref(item.href);
+    if (!key) continue;
+    if (!byHref.has(key)) byHref.set(key, []);
+    byHref.get(key).push(item.markup);
+  }
+
+  return String(html || "").replace(noterefAnchorPattern, (match) => {
+    const key = normalizeNoterefHref(extractHtmlAttribute(match, "href"));
+    const candidates = byHref.get(key);
+    return candidates?.shift() || match;
+  });
+}
+
+function protectNoterefMarkup(html, enabled) {
+  const noterefs = [];
+  if (!enabled) return { html: String(html || ""), noterefs };
+  return {
+    html: String(html || "").replace(noterefAnchorPattern, (markup) => {
+      const index = noterefs.push(markup) - 1;
+      return `\uE100${index}\uE101`;
+    }),
+    noterefs,
+  };
+}
+
+function normalizePreservedInlineMarkup(text, options = {}, noterefs = []) {
   const keep = normalizeInlineMarkupOptions(options);
-  return String(text || "")
+  const normalized = String(text || "")
     .replace(/<\s*(ruby|rt|b)\b[^>]*>/gi, (match, tag) => {
       const normalized = tag.toLowerCase();
       if ((normalized === "ruby" || normalized === "rt") && keep.ruby) return `<${normalized}>`;
@@ -79,10 +132,17 @@ function normalizePreservedInlineMarkup(text, options = {}) {
       return "";
     })
     .replace(/<(?!\/?(?:ruby|rt|b)>)[^>]+>/gi, "");
+  return normalized.replace(/\uE100(\d+)\uE101/g, (match, index) => noterefs[Number(index)] || "");
 }
 
 function epubHtmlToText(html, options = {}) {
-  return normalizePreservedInlineMarkup(htmlToTextWithInlineMarkup(html), options);
+  const keep = normalizeInlineMarkupOptions(options);
+  const protectedMarkup = protectNoterefMarkup(html, keep.noteref);
+  return normalizePreservedInlineMarkup(
+    htmlToTextWithInlineMarkup(protectedMarkup.html),
+    options,
+    protectedMarkup.noterefs,
+  );
 }
 
 function epubPathJoin(base, href) {
@@ -328,7 +388,16 @@ function selectBodySpineIndexes(infos) {
 }
 
 async function readEpubTextWithPandoc(file, options = {}) {
-  const html = await readWithPandoc(file, { from: "epub", to: "html" });
+  let html = await readWithPandoc(file, { from: "epub", to: "html" });
+  if (normalizeInlineMarkupOptions(options).noteref) {
+    const zip = await JSZip.loadAsync(fs.readFileSync(file));
+    const originalNoterefs = [];
+    for (const entry of Object.values(zip.files)) {
+      if (entry.dir || !/\.x?html?$/i.test(entry.name)) continue;
+      originalNoterefs.push(...extractNoterefMarkup(await entry.async("string")));
+    }
+    html = restorePandocNoterefMarkup(html, originalNoterefs);
+  }
   const text = normalizeEpubText(epubHtmlToText(html, options));
   if (!text) throw new Error(`Pandoc produced empty text for ${file}`);
   return text;
@@ -407,7 +476,10 @@ async function readEpubText(file, options = {}) {
 }
 
 module.exports = {
+  epubHtmlToText,
+  extractNoterefMarkup,
   readEpubText,
   readEpubTextFromSpine,
   readEpubTextWithPandoc,
+  restorePandocNoterefMarkup,
 };

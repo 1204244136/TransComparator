@@ -750,6 +750,13 @@
               <small>&lt;b&gt;A&lt;/b&gt;</small>
             </label>
           </div>
+          <div class="check-item">
+            <input id="preserveNoteref" type="checkbox" checked>
+            <label for="preserveNoteref">
+              保留注释标记
+              <small>&lt;a epub:type="noteref" ...&gt;&lt;sup&gt;㊟&lt;/sup&gt;&lt;/a&gt;</small>
+            </label>
+          </div>
         </div>
       </div>
     </section>
@@ -887,6 +894,7 @@
       twStart: document.getElementById("twStart"),
       preserveRuby: document.getElementById("preserveRuby"),
       preserveBold: document.getElementById("preserveBold"),
+      preserveNoteref: document.getElementById("preserveNoteref"),
     };
     const roleNames = { jp: "原文 A", cn: "非原文 B", tw: "非原文 C" };
     const supportedExtensions = new Set(["txt", "epub", "docx", "html", "htm", "odt", "md", "markdown", "rtf"]);
@@ -1167,6 +1175,7 @@
             inlineMarkup: {
               ruby: ids.preserveRuby.checked,
               bold: ids.preserveBold.checked,
+              noteref: ids.preserveNoteref.checked,
             },
           }),
         });
@@ -1196,6 +1205,7 @@
       ids.twStart.value = "";
       ids.preserveRuby.checked = true;
       ids.preserveBold.checked = true;
+      ids.preserveNoteref.checked = true;
       ids.runButton.disabled = true;
       const activeProject = state.projects.find((project) => project.active);
       setOutputUrl(activeProject?.outputUrl || "");
@@ -1277,6 +1287,7 @@
       renderFiles();
       ids.preserveRuby.checked = saved.inlineMarkup?.ruby !== false;
       ids.preserveBold.checked = saved.inlineMarkup?.bold !== false;
+      ids.preserveNoteref.checked = saved.inlineMarkup?.noteref !== false;
       for (const role of ["jp", "cn", "tw"]) {
         ids[`${role}Label`].value = saved.labels?.[role] || { jp: "日文", cn: "简中", tw: "台版" }[role];
         ids[`${role}Start`].value = saved.startMarkers?.[role] || "";
@@ -1434,7 +1445,7 @@
         setRunStatus("显示名已变更，请先保存。", "warn");
       });
     }
-    for (const id of ["preserveRuby", "preserveBold"]) {
+    for (const id of ["preserveRuby", "preserveBold", "preserveNoteref"]) {
       ids[id].addEventListener("change", () => {
         state.saved = false;
         ids.runButton.disabled = true;

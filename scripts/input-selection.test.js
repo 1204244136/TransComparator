@@ -34,6 +34,19 @@ test("bilingual selection accepts source A and target B without a C file", () =>
     assert.equal(selection.comparisonMode, "bilingual");
     assert.equal(selection.files.tw, "");
     assert.equal(selection.inputMode, "txt");
+    assert.deepEqual(selection.inlineMarkup, { ruby: true, bold: true, noteref: true });
+  });
+});
+
+test("inline markup selection can disable EPUB noteref preservation", () => {
+  withTextFiles(2, ([jp, cn]) => {
+    const selection = validateSelection({
+      comparisonMode: "bilingual",
+      files: { jp, cn, tw: "" },
+      inlineMarkup: { noteref: false },
+    });
+
+    assert.deepEqual(selection.inlineMarkup, { ruby: true, bold: true, noteref: false });
   });
 });
 
