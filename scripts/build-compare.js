@@ -3460,6 +3460,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       selectedRevisionIds.clear();
       applyFilters({ reset: false });
       setTemporaryStatus("已将 " + entries.length + " 处修改结果标记为人工确认。", 5000);
+      tableFrame.scrollTop = 0;
     });
 
     function aiConfig() {

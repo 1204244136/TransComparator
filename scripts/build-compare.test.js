@@ -95,6 +95,7 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(script, /resultLimit: "64"/);
   assert.match(script, /requestIdleCallback\(commit, \{ timeout: 2000 \}\)/);
   assert.match(script, /window\.addEventListener\("pagehide", flushNotes\)/);
+  assert.match(script, /selectedRevisionIds\.clear\(\);[\s\S]*?applyFilters\(\{ reset: false \}\);[\s\S]*?tableFrame\.scrollTop = 0;/);
   assert.doesNotMatch(html, /backdrop-filter/);
   assert.doesNotThrow(() => new Function(script));
 });
