@@ -1746,6 +1746,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       gap: 5px;
       min-width: 0;
     }
+    .revision-select input:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
     .note-summary-key {
       color: var(--muted);
       font-weight: 700;
@@ -3329,6 +3333,96 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const tableTop = document.querySelector(".table-frame").offsetTop - 12;
       window.scrollTo({ top: tableTop, behavior: "auto" });
     }
+
+    function visibleRevisionCheckboxes() {
+      return Array.from(tbody.querySelectorAll("[data-export-revision]"))
+        .filter((checkbox) => !checkbox.disabled && checkbox.getClientRects().length > 0);
+    }
+
+    function focusRevisionCheckbox(checkbox) {
+      if (!checkbox) return false;
+      const row = checkbox.closest("tr[data-index]");
+      const previous = activeRowId ? renderedRow(activeRowId) : null;
+      if (previous && previous !== row) previous.classList.remove("active-row");
+      activeRowId = row?.dataset.index || "";
+      if (row) row.classList.add("active-row");
+      checkbox.focus({ preventScroll: true });
+      checkbox.scrollIntoView({ block: "nearest", inline: "nearest" });
+      return true;
+    }
+
+    function revisionNavigationTargets() {
+      const targets = [];
+      filteredRows.forEach((row, filteredIndex) => {
+        const id = String(row.index);
+        const revision = parseAutomatedNote(notes[id]?.note || "")?.revision || "";
+        if (!bilingualMode && row.cn && revision) targets.push({ id, filteredIndex });
+      });
+      return targets;
+    }
+
+    function focusRevisionTarget(target) {
+      if (!target) return false;
+      const size = Number(pageSize.value || 100);
+      const targetPage = Math.floor(target.filteredIndex / size) + 1;
+      if (targetPage !== currentPage) {
+        currentPage = targetPage;
+        renderVisibleRows();
+      }
+      const checkbox = tbody.querySelector('[data-export-revision="' + CSS.escape(target.id) + '"]');
+      return visibleRevisionCheckboxes().includes(checkbox) && focusRevisionCheckbox(checkbox);
+    }
+
+    function focusAdjacentRevision(direction, currentCheckbox = null) {
+      if (document.documentElement.classList.contains("hide-revision-diff")) return false;
+      const checkboxes = visibleRevisionCheckboxes();
+      const currentIndex = currentCheckbox ? checkboxes.indexOf(currentCheckbox) : -1;
+      if (currentIndex >= 0) {
+        const adjacent = checkboxes[currentIndex + direction];
+        if (adjacent) return focusRevisionCheckbox(adjacent);
+        const targets = revisionNavigationTargets();
+        const targetIndex = targets.findIndex((target) => target.id === currentCheckbox.dataset.exportRevision);
+        const target = targets[targetIndex + direction];
+        return target ? focusRevisionTarget(target) : true;
+      }
+
+      const targets = revisionNavigationTargets();
+      if (activeRowId) {
+        const activeCheckbox = activeRowId
+          ? checkboxes.find((checkbox) => checkbox.dataset.exportRevision === activeRowId)
+          : null;
+        if (activeCheckbox) return focusRevisionCheckbox(activeCheckbox);
+        const activeIndex = filteredRows.findIndex((row) => String(row.index) === activeRowId);
+        const target = direction > 0
+          ? targets.find((item) => item.filteredIndex > activeIndex)
+          : targets.filter((item) => item.filteredIndex < activeIndex).at(-1);
+        if (target) return focusRevisionTarget(target);
+      }
+
+      const edge = direction > 0 ? checkboxes[0] : checkboxes.at(-1);
+      if (edge) return focusRevisionCheckbox(edge);
+      const size = Number(pageSize.value || 100);
+      const pageStart = (currentPage - 1) * size;
+      const pageEnd = currentPage * size;
+      const target = direction > 0
+        ? targets.find((item) => item.filteredIndex >= pageEnd)
+        : targets.filter((item) => item.filteredIndex < pageStart).at(-1);
+      return focusRevisionTarget(target);
+    }
+
+    function isKeyboardEditingTarget(target) {
+      return Boolean(target.closest('input:not([type="checkbox"]), textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"]'));
+    }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      if (isKeyboardEditingTarget(event.target)) return;
+      const currentCheckbox = event.target.closest("[data-export-revision]");
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      if (!focusAdjacentRevision(direction, currentCheckbox)) return;
+      event.preventDefault();
+    });
 
     firstPage.addEventListener("click", () => setPage(1));
     prevPage.addEventListener("click", () => setPage(currentPage - 1));

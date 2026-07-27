@@ -96,6 +96,12 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(script, /requestIdleCallback\(commit, \{ timeout: 2000 \}\)/);
   assert.match(script, /window\.addEventListener\("pagehide", flushNotes\)/);
   assert.match(script, /selectedRevisionIds\.clear\(\);[\s\S]*?applyFilters\(\{ reset: false \}\);[\s\S]*?tableFrame\.scrollTop = 0;/);
+  assert.match(script, /function visibleRevisionCheckboxes\(\)[\s\S]*?getClientRects\(\)\.length > 0/);
+  assert.match(script, /function focusRevisionTarget\(target\)[\s\S]*?Math\.floor\(target\.filteredIndex \/ size\) \+ 1[\s\S]*?renderVisibleRows\(\)/);
+  assert.match(script, /function focusAdjacentRevision\(direction, currentCheckbox = null\)[\s\S]*?targets\[targetIndex \+ direction\]/);
+  assert.match(script, /input:not\(\[type="checkbox"\]\), textarea, select/);
+  assert.match(script, /event\.key === "ArrowDown" \? 1 : -1/);
+  assert.match(script, /scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/);
   assert.doesNotMatch(html, /backdrop-filter/);
   assert.doesNotThrow(() => new Function(script));
 });
