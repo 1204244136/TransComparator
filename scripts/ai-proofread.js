@@ -92,6 +92,12 @@ const contextBudget = {
   maxChars: 6000,
 };
 
+const errorCircuitBreaker = {
+  minimumSamples: 10,
+  windowSize: 20,
+  errorRate: 0.5,
+};
+
 const status = {
   running: false,
   stopRequested: false,
@@ -129,6 +135,7 @@ const status = {
 };
 
 let controllers = new Set();
+let recentModelOutcomes = [];
 
 function pushLog(line) {
   const text = String(line || "").replace(/\r\n?/g, "\n");
@@ -308,6 +315,7 @@ function resetStatus(config, rowsLength) {
   status.resultChanges = [];
   status.resultRevision = 0;
   controllers = new Set();
+  recentModelOutcomes = [];
 }
 
 function makePrefilterResult(row, labels, classification, comparisonMode = "trilingual") {
@@ -535,6 +543,7 @@ function clearProofreadCache() {
   status.resultChanges = [];
   status.resultRevision = 0;
   controllers = new Set();
+  recentModelOutcomes = [];
   return clientStatus();
 }
 
@@ -550,15 +559,19 @@ async function runQueue(queue, allRows, config, labels) {
       try {
         const result = await proofreadRow(row, allRows, config, labels);
         addResult(result);
+        if (!status.stopRequested) recordModelOutcome(false);
       } catch (error) {
+        const fatalRequestError = isFatalRequestError(error) && !status.stopRequested;
         addResult({
           runId: status.runId,
           index: row.index,
           signature: rowSignature(row),
-          status: status.stopRequested ? "stopped" : "error",
+          status: status.stopRequested && !fatalRequestError ? "stopped" : "error",
           done: false,
-          note: `[AI校对]\n${status.stopRequested ? "校对已终止。" : `调用失败：${error.message || String(error)}`}`,
+          note: `[AI校对]\n${status.stopRequested && !fatalRequestError ? "校对已终止。" : `调用失败：${error.message || String(error)}`}`,
         });
+        if (fatalRequestError) stopForFatalRequestError(error);
+        else if (!status.stopRequested) recordModelOutcome(true);
       } finally {
         status.active = status.active.filter((index) => index !== row.index);
       }
@@ -578,6 +591,34 @@ function finish() {
   } else {
     pushLog("AI 校对完成。");
   }
+}
+
+function isFatalRequestError(error) {
+  return error?.httpStatus === 401 || error?.httpStatus === 403;
+}
+
+function stopForFatalRequestError(error) {
+  status.stopRequested = true;
+  status.error = `AI 接口拒绝访问，任务已自动终止：${error.message || String(error)}`;
+  pushLog(status.error);
+  for (const controller of controllers) controller.abort();
+}
+
+function recordModelOutcome(failed) {
+  recentModelOutcomes.push(Boolean(failed));
+  if (recentModelOutcomes.length > errorCircuitBreaker.windowSize) {
+    recentModelOutcomes.splice(0, recentModelOutcomes.length - errorCircuitBreaker.windowSize);
+  }
+  if (recentModelOutcomes.length < errorCircuitBreaker.minimumSamples) return;
+
+  const errorCount = recentModelOutcomes.filter(Boolean).length;
+  const errorRate = errorCount / recentModelOutcomes.length;
+  if (errorRate < errorCircuitBreaker.errorRate) return;
+
+  status.stopRequested = true;
+  status.error = `AI 请求错误率熔断：最近 ${recentModelOutcomes.length} 次处理中有 ${errorCount} 次失败（${Math.round(errorRate * 100)}%），任务已自动终止。`;
+  pushLog(status.error);
+  for (const controller of controllers) controller.abort();
 }
 
 async function proofreadRow(row, allRows, config, labels) {
@@ -866,15 +907,30 @@ async function callOpenAiCompatible(messages, config) {
 async function fetchJson(url, options, fetchOptions = {}) {
   const controller = new AbortController();
   const track = fetchOptions.track !== false;
+  const timeoutMs = fetchOptions.timeoutMs || 90000;
+  let timedOut = false;
   if (track) controllers.add(controller);
-  const timeout = setTimeout(() => controller.abort(), fetchOptions.timeoutMs || 90000);
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
     const text = await response.text();
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`);
+      const error = new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`);
+      error.code = "HTTP_ERROR";
+      error.httpStatus = response.status;
+      throw error;
     }
     return text ? JSON.parse(text) : {};
+  } catch (error) {
+    if (timedOut && error?.name === "AbortError") {
+      const timeoutError = new Error(`请求超时（${Math.ceil(timeoutMs / 1000)} 秒）`);
+      timeoutError.code = "REQUEST_TIMEOUT";
+      throw timeoutError;
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
     if (track) controllers.delete(controller);
