@@ -1,7 +1,15 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { buildMessages, decisionToResult, parseDecision, proofreadPromptFor } = require("./ai-proofread");
+const {
+  buildChatCompletionBody,
+  buildMessages,
+  decisionToResult,
+  isGptModel,
+  normalizeReasoningEffort,
+  parseDecision,
+  proofreadPromptFor,
+} = require("./ai-proofread");
 
 function payload() {
   return {
@@ -54,6 +62,38 @@ test("custom AI prompts still receive the mandatory noteref preservation rule", 
 
   assert.match(messages[0].content, /硬性格式约束/);
   assert.match(messages[0].content, /noteref 注释标记必须.*逐字、原位保留/);
+});
+
+test("GPT Chat Completions requests include the selected reasoning effort", () => {
+  const messages = [{ role: "user", content: "proofread" }];
+  const body = buildChatCompletionBody(messages, {
+    model: "gpt-5.6",
+    reasoningEffort: "high",
+  });
+
+  assert.deepEqual(body, {
+    model: "gpt-5.6",
+    messages,
+    stream: false,
+    reasoning_effort: "high",
+  });
+  assert.equal(isGptModel("openai/gpt-5.6-terra"), true);
+  assert.equal(normalizeReasoningEffort(" XHIGH ", "openai/gpt-5.6-terra"), "xhigh");
+});
+
+test("non-GPT requests ignore reasoning effort and keep their sampling temperature", () => {
+  const body = buildChatCompletionBody([], {
+    model: "qwen2.5:14b-instruct",
+    reasoningEffort: "high",
+  });
+
+  assert.deepEqual(body, {
+    model: "qwen2.5:14b-instruct",
+    messages: [],
+    stream: false,
+    temperature: 0.1,
+  });
+  assert.equal(normalizeReasoningEffort("unsupported", "gpt-5.6"), "");
 });
 
 test("AI decisions normalize MQM-style severity only for definite edits", () => {

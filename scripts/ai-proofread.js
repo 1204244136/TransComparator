@@ -57,6 +57,17 @@ const sharedProofreadInstructions = [
   "只返回 JSON，不要返回 Markdown 或额外解释；必须使用 outputSchema 中的英文键名，不要省略 summary，需要修改时不要省略 severity 和 revisedText。",
 ];
 
+const reasoningEfforts = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+function isGptModel(model) {
+  return /(?:^|\/)gpt(?:-|$)/i.test(String(model || "").trim());
+}
+
+function normalizeReasoningEffort(value, model) {
+  const effort = String(value || "").trim().toLowerCase();
+  return isGptModel(model) && reasoningEfforts.has(effort) ? effort : "";
+}
+
 const proofreadPrompts = {
   bilingual: {
     system: [
@@ -108,6 +119,7 @@ const status = {
   proofreadMode: "bilingual",
   provider: "local",
   model: "",
+  reasoningEffort: "",
   projectKey: "",
   rowsSignature: "",
   monitorEnabled: false,
@@ -174,6 +186,7 @@ function clientStatus(options = {}) {
     proofreadMode: status.proofreadMode,
     provider: status.provider,
     model: status.model,
+    reasoningEffort: status.reasoningEffort,
     projectKey: status.projectKey,
     rowsSignature: status.rowsSignature,
     monitorEnabled: status.monitorEnabled,
@@ -243,6 +256,7 @@ function cleanConfig(input = {}) {
   const proofreadMode = input.proofreadMode === "trilingual" ? "trilingual" : "bilingual";
   const concurrency = clampInteger(input.concurrency, 1, 12, 3);
   const similarityThreshold = clampNumber(input.similarityThreshold, 0.5, 1, 0.92);
+  const model = String(input.model || defaults.model).trim();
   return {
     provider,
     target,
@@ -252,7 +266,8 @@ function cleanConfig(input = {}) {
     projectKey: String(input.projectKey || "").trim(),
     rowsSignature: String(input.rowsSignature || "").trim(),
     baseUrl: String(input.baseUrl || defaults.baseUrl).trim().replace(/\/+$/, ""),
-    model: String(input.model || defaults.model).trim(),
+    model,
+    reasoningEffort: normalizeReasoningEffort(input.reasoningEffort, model),
     apiKey: String(input.apiKey || "").trim(),
     systemPrompt: String(input.systemPrompt || "").trim() || proofreadPromptFor(proofreadMode).system,
     completedIndexes: normalizeIndexSet(input.completedIndexes),
@@ -290,6 +305,7 @@ function resetStatus(config, rowsLength) {
   status.proofreadMode = config.proofreadMode;
   status.provider = config.provider;
   status.model = config.model;
+  status.reasoningEffort = config.reasoningEffort;
   status.projectKey = config.projectKey;
   status.rowsSignature = config.rowsSignature;
   status.monitorEnabled = config.monitorEnabled;
@@ -680,6 +696,7 @@ async function trackedCallModel(row, stage, stageLabel, messages, config) {
     stageLabel,
     provider: config.provider,
     model: config.model,
+    reasoningEffort: config.reasoningEffort,
     startedAt,
     state: "waiting",
     messages: summarizeMessages(messages),
@@ -891,17 +908,25 @@ async function callModel(messages, config) {
 async function callOpenAiCompatible(messages, config) {
   const headers = { "content-type": "application/json" };
   if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`;
+  const body = buildChatCompletionBody(messages, config);
   const data = await fetchJson(`${config.baseUrl}/chat/completions`, {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      temperature: 0.1,
-      stream: false,
-    }),
+    body: JSON.stringify(body),
   });
   return data.choices?.[0]?.message?.content || "";
+}
+
+function buildChatCompletionBody(messages, config = {}) {
+  const body = {
+    model: config.model,
+    messages,
+    stream: false,
+  };
+  const reasoningEffort = normalizeReasoningEffort(config.reasoningEffort, config.model);
+  if (reasoningEffort) body.reasoning_effort = reasoningEffort;
+  if (!isGptModel(config.model)) body.temperature = 0.1;
+  return body;
 }
 
 async function fetchJson(url, options, fetchOptions = {}) {
@@ -1127,11 +1152,14 @@ function analysisLine(decision, fallback = "") {
 }
 
 module.exports = {
+  buildChatCompletionBody,
   buildMessages,
   clearProofreadCache,
   clientStatus,
   decisionToResult,
   listModels,
+  isGptModel,
+  normalizeReasoningEffort,
   normalizeSeverity,
   parseDecision,
   providerDefaults,

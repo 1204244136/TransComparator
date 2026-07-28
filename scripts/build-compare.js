@@ -1191,11 +1191,50 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     details[open] > summary .details-toggle::before {
       transform: rotate(180deg);
     }
-    .ai-grid {
+    .ai-config-stack {
+      border-top: 1px solid var(--line);
+      margin-top: 8px;
+    }
+    .ai-config-band {
       display: grid;
-      grid-template-columns: minmax(150px, 0.7fr) minmax(280px, 1.45fr) minmax(220px, 1fr) minmax(220px, 1fr);
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 9px 0;
+    }
+    .ai-config-band + .ai-config-band {
+      border-top: 1px solid var(--line);
+    }
+    .ai-config-label {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      padding-left: 8px;
+      border-left: 3px solid var(--focus);
+      color: var(--focus-hover);
+      font-size: 11px;
+      line-height: 1.25;
+      font-weight: 800;
+    }
+    .ai-proofread-band .ai-config-label {
+      border-left-color: #667085;
+      color: #344054;
+    }
+    .ai-service-fields,
+    .ai-proofread-fields {
+      min-width: 0;
+      display: grid;
       gap: 8px 10px;
       align-items: end;
+    }
+    .ai-service-fields {
+      grid-template-columns: minmax(140px, 0.68fr) minmax(250px, 1.5fr) minmax(240px, 1.15fr) minmax(210px, 1fr);
+    }
+    .ai-service-fields.has-reasoning {
+      grid-template-columns: minmax(140px, 0.65fr) minmax(240px, 1.45fr) minmax(230px, 1.1fr) minmax(125px, 0.58fr) minmax(200px, 1fr);
+    }
+    .ai-proofread-fields {
+      grid-template-columns: minmax(150px, 0.75fr) minmax(100px, 0.5fr) minmax(90px, 0.45fr) minmax(220px, 1.8fr);
     }
     .ai-field {
       min-width: 0;
@@ -1213,24 +1252,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       line-height: 1.25;
       font-weight: 700;
     }
-    .ai-mode-note {
-      margin-top: 3px;
-      font-size: 11px;
-      line-height: 1.3;
-    }
-    .ai-secondary {
-      grid-column: 1 / -1;
+    .ai-runbar {
       display: grid;
-      grid-template-columns: minmax(120px, 150px) minmax(80px, 110px) minmax(100px, 130px) minmax(0, 1fr);
-      gap: 8px 10px;
-      align-items: start;
-    }
-    .ai-controls {
-      grid-column: 1 / -1;
-      display: flex;
+      grid-template-columns: minmax(260px, auto) minmax(260px, 1fr) auto;
       align-items: center;
-      justify-content: space-between;
-      gap: 10px;
+      gap: 14px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
       min-width: 0;
     }
     .ai-options {
@@ -1255,13 +1283,19 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       gap: 8px;
     }
     .ai-status {
-      margin-top: 7px;
       display: grid;
-      grid-template-columns: minmax(240px, 1fr) minmax(160px, auto);
+      grid-template-columns: minmax(120px, 1fr) minmax(120px, 180px);
       gap: 8px;
       align-items: center;
+      min-width: 0;
       color: var(--muted);
       font-size: 11px;
+    }
+    #aiStatus {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .ai-progress {
       height: 6px;
@@ -1893,11 +1927,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       .toolbar-actions {
         justify-content: flex-start;
       }
-      .ai-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .ai-secondary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .ai-controls { grid-column: span 3; align-items: flex-start; flex-direction: column; }
+      .ai-config-band { grid-template-columns: 76px minmax(0, 1fr); }
+      .ai-service-fields,
+      .ai-service-fields.has-reasoning,
+      .ai-proofread-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .ai-runbar { grid-template-columns: 1fr auto; }
+      .ai-status { grid-column: 1 / -1; grid-row: 2; }
       .ai-actions { flex-wrap: wrap; }
-      .ai-status { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -1971,41 +2007,58 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         </div>
       </div>
       <details id="aiPanel" class="ai-panel" aria-label="AI 校对">
-        <summary class="ai-panel-title"><span>AI 校对</span><button class="details-toggle" type="button" data-details-toggle aria-label="折叠或展开 AI 校对"></button></summary>
-        <details id="aiConfigSection" class="ai-section" open>
-          <summary><span>运行配置</span><button class="details-toggle" type="button" data-details-toggle aria-label="折叠或展开运行配置"></button></summary>
-          <div class="ai-grid">
-            <div class="ai-field">
-              <label for="aiProvider">接口</label>
-              <select id="aiProvider">
-                <option value="local">本地默认</option>
-                <option value="compatible">第三方兼容服务</option>
-              </select>
-            </div>
-            <div class="ai-field">
-              <label for="aiBaseUrl">地址</label>
-              <input id="aiBaseUrl" type="url" value="${escapeHtml(providerDefaults.local.baseUrl)}">
-            </div>
-            <div class="ai-field">
-              <label for="aiModel">模型</label>
-              <div class="ai-model-row">
-                <select id="aiModel">
-                  <option value="${escapeHtml(providerDefaults.local.model)}">${escapeHtml(providerDefaults.local.model)}</option>
+        <summary class="ai-panel-title"><span>AI 辅助校对</span><button class="details-toggle" type="button" data-details-toggle aria-label="折叠或展开 AI 辅助校对"></button></summary>
+        <div id="aiConfigSection" class="ai-config-stack">
+          <section class="ai-config-band ai-service-band" aria-labelledby="aiServiceLabel">
+            <div id="aiServiceLabel" class="ai-config-label">AI 服务</div>
+            <div id="aiServiceFields" class="ai-service-fields">
+              <div class="ai-field">
+                <label for="aiProvider">接口</label>
+                <select id="aiProvider">
+                  <option value="local">本地默认</option>
+                  <option value="compatible">第三方兼容服务</option>
                 </select>
-                <button id="aiRefreshModels" type="button">刷新</button>
+              </div>
+              <div class="ai-field">
+                <label for="aiBaseUrl">地址</label>
+                <input id="aiBaseUrl" type="url" value="${escapeHtml(providerDefaults.local.baseUrl)}">
+              </div>
+              <div class="ai-field">
+                <label for="aiModel">模型</label>
+                <div class="ai-model-row">
+                  <select id="aiModel">
+                    <option value="${escapeHtml(providerDefaults.local.model)}">${escapeHtml(providerDefaults.local.model)}</option>
+                  </select>
+                  <button id="aiRefreshModels" type="button">刷新</button>
+                </div>
+              </div>
+              <div id="aiReasoningField" class="ai-field" hidden>
+                <label for="aiReasoningEffort">推理强度</label>
+                <select id="aiReasoningEffort" title="不同 GPT 模型支持的推理强度可能不同">
+                  <option value="">模型默认</option>
+                  <option value="none">无 (none)</option>
+                  <option value="minimal">最小 (minimal)</option>
+                  <option value="low">低 (low)</option>
+                  <option value="medium">中 (medium)</option>
+                  <option value="high">高 (high)</option>
+                  <option value="xhigh">极高 (xhigh)</option>
+                  <option value="max">最大 (max)</option>
+                </select>
+              </div>
+              <div class="ai-field">
+                <label for="aiApiKey">API Key</label>
+                <input id="aiApiKey" type="password" autocomplete="off" placeholder="${escapeHtml(providerDefaults.local.apiKeyPlaceholder || "")}">
               </div>
             </div>
-            <div class="ai-field">
-              <label for="aiApiKey">API Key</label>
-              <input id="aiApiKey" type="password" autocomplete="off" placeholder="${escapeHtml(providerDefaults.local.apiKeyPlaceholder || "")}">
-            </div>
-            <div class="ai-secondary">
+          </section>
+          <section class="ai-config-band ai-proofread-band" aria-labelledby="aiProofreadLabel">
+            <div id="aiProofreadLabel" class="ai-config-label">校对设置</div>
+            <div class="ai-proofread-fields">
               <div class="ai-field">
                 <label for="aiProofreadMode">校对模式</label>
                 <select id="aiProofreadMode" disabled>
                   <option value="${defaultProofreadMode}">${bilingual ? "双语版本校对" : "三语语境校对"}</option>
                 </select>
-                <div id="aiProofreadModeHint" class="subtle ai-mode-note">${bilingual ? "目标固定为译文 B，参考原文 A；原文只作语义边界和上下文。" : "目标可选非原文 B 或 C，同时参考原文 A 和另一版本。"}</div>
               </div>
               <div class="ai-field">
                 <label for="aiTarget">校对列</label>
@@ -2022,22 +2075,22 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
                 <label for="aiSimilarity">${escapeHtml(similarityLabel)}相似度预筛选</label>
                 <input id="aiSimilarity" type="text" inputmode="decimal" value="92%" aria-label="${escapeHtml(similarityLabel)}相似度预筛选百分比">
               </div>
-              <div class="ai-controls">
-                <div class="toggle-row ai-options">
-                  <label><input id="aiMonitorEnabled" type="checkbox">显示记录对话监控</label>
-                  <label><input id="aiPromptVisible" type="checkbox">显示内置提示词</label>
-                </div>
-                <div class="ai-actions">
-                  <button id="aiStart" class="primary" type="button">开始</button>
-                  <button id="aiStop" class="danger" type="button" disabled>停止</button>
-                </div>
-              </div>
             </div>
+          </section>
+        </div>
+        <div class="ai-runbar">
+          <div class="toggle-row ai-options">
+            <label><input id="aiMonitorEnabled" type="checkbox">对话监控</label>
+            <label><input id="aiPromptVisible" type="checkbox">内置提示词</label>
           </div>
-        </details>
-        <div class="ai-status">
-          <div id="aiStatus">${escapeHtml(providerDefaults.local.note || "等待启动 AI 校对。")}</div>
-          <div id="aiProgressWrap" class="ai-progress" aria-hidden="true" hidden><span id="aiProgress"></span></div>
+          <div class="ai-status">
+            <div id="aiStatus" title="就绪">就绪</div>
+            <div id="aiProgressWrap" class="ai-progress" aria-hidden="true" hidden><span id="aiProgress"></span></div>
+          </div>
+          <div class="ai-actions">
+            <button id="aiStart" class="primary" type="button">开始</button>
+            <button id="aiStop" class="danger" type="button" disabled>停止</button>
+          </div>
         </div>
         <details id="aiMonitorSection" class="ai-section" open>
           <summary><span>AI 对话监控 <span id="aiMonitorState" class="ai-monitor-state">尚未启动</span></span><button class="details-toggle" type="button" data-details-toggle aria-label="折叠或展开 AI 对话监控"></button></summary>
@@ -2148,15 +2201,16 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const aiIds = {
       provider: document.getElementById("aiProvider"),
       panel: document.getElementById("aiPanel"),
-      configSection: document.getElementById("aiConfigSection"),
       monitorSection: document.getElementById("aiMonitorSection"),
       promptSection: document.getElementById("aiPromptSection"),
+      serviceFields: document.getElementById("aiServiceFields"),
       baseUrl: document.getElementById("aiBaseUrl"),
       model: document.getElementById("aiModel"),
+      reasoningField: document.getElementById("aiReasoningField"),
+      reasoningEffort: document.getElementById("aiReasoningEffort"),
       refreshModels: document.getElementById("aiRefreshModels"),
       apiKey: document.getElementById("aiApiKey"),
       proofreadMode: document.getElementById("aiProofreadMode"),
-      proofreadModeHint: document.getElementById("aiProofreadModeHint"),
       target: document.getElementById("aiTarget"),
       concurrency: document.getElementById("aiConcurrency"),
       similarity: document.getElementById("aiSimilarity"),
@@ -2280,9 +2334,11 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
 
     function updateProofreadModeHint() {
       aiIds.proofreadMode.value = bilingualMode ? "bilingual" : "trilingual";
-      aiIds.proofreadModeHint.textContent = bilingualMode
+      const hint = bilingualMode
         ? "目标固定为译文 B，参考原文 A；原文只作语义边界和上下文。"
         : "目标可选非原文 B 或 C，同时参考原文 A 和另一版本。";
+      aiIds.proofreadMode.title = hint;
+      aiIds.target.title = hint;
     }
 
     function automatedNoteMarker(value) {
@@ -2379,6 +2435,18 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
     }
 
+    function isGptModelName(model) {
+      return /(?:^|\\/)gpt(?:-|$)/i.test(String(model || "").trim());
+    }
+
+    function updateReasoningEffortVisibility() {
+      const visible = isGptModelName(aiIds.model.value);
+      aiIds.reasoningField.hidden = !visible;
+      aiIds.reasoningEffort.disabled = !visible;
+      aiIds.serviceFields.classList.toggle("has-reasoning", visible);
+      syncEnhancedSelect(aiIds.reasoningEffort);
+    }
+
     function loadSavedAiPrompt() {
       try {
         return JSON.parse(localStorage.getItem(aiPromptStorageKey) || "{}");
@@ -2392,6 +2460,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         provider: aiIds.provider.value,
         baseUrl: aiIds.baseUrl.value,
         model: aiIds.model.value,
+        reasoningEffort: aiIds.reasoningEffort.value,
         modelOptions: aiModelOptions,
         modelOptionsBaseUrl: aiModelOptions.length ? normalizeApiBaseUrl(aiIds.baseUrl.value) : "",
         apiKey: aiIds.apiKey.value,
@@ -2430,6 +2499,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         aiIds.model.dataset.touched = "1";
       }
       if (typeof saved.apiKey === "string") aiIds.apiKey.value = saved.apiKey;
+      if (["", "none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(saved.reasoningEffort)) {
+        aiIds.reasoningEffort.value = saved.reasoningEffort;
+      }
       if (saved.target === "cn" || saved.target === "tw") aiIds.target.value = saved.target;
       if (bilingualMode) aiIds.target.value = "cn";
       if (saved.concurrency != null) aiIds.concurrency.value = saved.concurrency;
@@ -2449,6 +2521,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.promptSection.hidden = !aiIds.promptVisible.checked;
       normalizeSimilarityInput();
       updateProofreadModeHint();
+      updateReasoningEffortVisibility();
     }
 
     function bindDetailsToggle(scope = document) {
@@ -2483,12 +2556,14 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       statusMessageLockedUntil = 0;
       aiIds.status.dataset.runtimeMessage = "1";
       aiIds.status.textContent = message;
+      aiIds.status.title = message;
     }
 
     function setTemporaryStatus(message, durationMs = 8000) {
       statusMessageLockedUntil = Date.now() + durationMs;
       aiIds.status.dataset.runtimeMessage = "1";
       aiIds.status.textContent = message;
+      aiIds.status.title = message;
     }
 
     function clearLocalAiCache() {
@@ -3562,6 +3637,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         provider: aiIds.provider.value,
         baseUrl: aiIds.baseUrl.value,
         model: aiIds.model.value,
+        reasoningEffort: aiIds.reasoningEffort.value,
         apiKey: aiIds.apiKey.value,
         proofreadMode: aiIds.proofreadMode.value,
         target: aiIds.target.value,
@@ -3582,8 +3658,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     function setProviderHint(defaults) {
       if (!defaults) return;
       aiIds.apiKey.placeholder = defaults.apiKeyPlaceholder || "";
+      aiIds.provider.title = defaults.note || "";
       if (!aiIds.status.dataset.runtimeMessage) {
-        aiIds.status.textContent = defaults.note || "等待启动 AI 校对。";
+        aiIds.status.textContent = "就绪";
+        aiIds.status.title = defaults.note || "就绪";
       }
     }
 
@@ -3726,6 +3804,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             '<span>第 ' + escapeHtml(request.rowIndex) + ' 行</span>' +
             '<span>' + escapeHtml(request.stageLabel || request.stage || "") + '</span>' +
             '<span>' + escapeHtml(request.model || "") + '</span>' +
+            (request.reasoningEffort ? '<span>推理 ' + escapeHtml(request.reasoningEffort) + '</span>' : '') +
           '</div>' +
           '<div class="ai-request-time">' + elapsed + '</div>' +
           '<button class="details-toggle" type="button" data-details-toggle aria-label="折叠或展开第 ' + escapeHtml(request.rowIndex) + ' 行请求详情"></button>' +
@@ -3878,6 +3957,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }));
       aiIds.model.value = resolved.selected;
       syncEnhancedSelect(aiIds.model);
+      updateReasoningEffortVisibility();
     }
 
     async function refreshAiModels() {
@@ -3959,6 +4039,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     });
     aiIds.model.addEventListener("input", () => {
       aiIds.model.dataset.touched = "1";
+      updateReasoningEffortVisibility();
       saveAiConfig();
     });
     aiIds.model.addEventListener("change", () => {
@@ -3970,9 +4051,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           aiIds.model.value = value.trim();
         }
       }
+      updateReasoningEffortVisibility();
       saveAiConfig();
     });
-    [aiIds.apiKey, aiIds.target, aiIds.concurrency, aiIds.proofreadMode].forEach((input) => {
+    [aiIds.apiKey, aiIds.target, aiIds.concurrency, aiIds.proofreadMode, aiIds.reasoningEffort].forEach((input) => {
       input.addEventListener("input", saveAiConfig);
       input.addEventListener("change", saveAiConfig);
     });

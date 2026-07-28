@@ -75,12 +75,18 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(html, /<option value="cn">B 译文<\/option>/);
   assert.doesNotMatch(html, /<option value="tw">/);
   assert.match(html, /目标固定为译文 B，参考原文 A/);
-  assert.match(html, /\.ai-secondary\s*\{[^}]*align-items: start;/);
+  assert.match(html, /\.ai-config-band\s*\{[^}]*grid-template-columns: 88px minmax\(0, 1fr\);/);
+  assert.match(html, /id="aiServiceLabel" class="ai-config-label">AI 服务/);
+  assert.match(html, /id="aiProofreadLabel" class="ai-config-label">校对设置/);
+  assert.match(html, /class="ai-runbar"/);
+  assert.doesNotMatch(html, /id="aiProofreadModeHint"/);
   assert.match(html, /translation-compare-ai-prompt-v1:/);
   assert.match(html, /pageMeta\.projectKey \|\| "unscoped"/);
   assert.match(html, /data-issue-severity="critical"/);
   assert.match(html, /严重程度/);
   assert.match(html, /issueSeverityFilter/);
+  assert.match(html, /id="aiReasoningField" class="ai-field" hidden/);
+  assert.match(html, /<option value="xhigh">极高 \(xhigh\)<\/option>/);
 
   const script = html.split("<script>")[1].split("</script>")[0];
   const globalConfigWriter = script.match(/function saveAiConfig\(\)[\s\S]*?function saveAiPrompt/)[0];
@@ -102,6 +108,8 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(script, /input:not\(\[type="checkbox"\]\), textarea, select/);
   assert.match(script, /event\.key === "ArrowDown" \? 1 : -1/);
   assert.match(script, /scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/);
+  assert.match(script, /reasoningEffort: aiIds\.reasoningEffort\.value/);
+  assert.match(script, /function updateReasoningEffortVisibility\(\)/);
   assert.doesNotMatch(html, /backdrop-filter/);
   assert.doesNotThrow(() => new Function(script));
 });
