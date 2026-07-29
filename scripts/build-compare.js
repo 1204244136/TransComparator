@@ -2064,6 +2064,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             <div id="prefilterStats" class="prefilter-stats" aria-live="polite">尚未运行预筛选。</div>
             <div class="prefilter-actions">
               <button id="prefilterStart" class="btn btn--primary" type="button">开始预筛</button>
+              <button id="prefilterConfirm" class="btn btn--success" type="button" disabled>确认预筛</button>
               <button id="prefilterStop" class="btn btn--danger" type="button" disabled>停止</button>
             </div>
           </div>
@@ -2093,6 +2094,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             <button type="button" class="segmented__btn" data-issue-severity="major" title="影响准确性、完整性或可用性">严重</button>
             <button type="button" class="segmented__btn" data-issue-severity="minor" title="不改变意义的局部语言或文体问题">轻微</button>
           </div>
+          <button id="prefilterResultFilter" class="chip" type="button" aria-pressed="false" disabled>预筛结果</button>
           <button id="noteFilter" class="chip" type="button" aria-pressed="false">有备注</button>
           <button id="doneFilter" class="chip" type="button" data-mode="open" aria-pressed="false">未人工确认</button>
         </div>
@@ -2299,6 +2301,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const issueSeverityButtons = Array.from(document.querySelectorAll("[data-issue-severity]"));
     const noteFilter = document.getElementById("noteFilter");
     const doneFilter = document.getElementById("doneFilter");
+    const prefilterResultFilter = document.getElementById("prefilterResultFilter");
     const showSource = document.getElementById("showSource");
     const showTranslationDiff = document.getElementById("showTranslationDiff");
     const showRevisionDiff = document.getElementById("showRevisionDiff");
@@ -2347,6 +2350,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       similarity: document.getElementById("prefilterSimilarity"),
       stats: document.getElementById("prefilterStats"),
       start: document.getElementById("prefilterStart"),
+      confirm: document.getElementById("prefilterConfirm"),
       stop: document.getElementById("prefilterStop"),
     };
     const appliedAiResults = new Set();
@@ -2355,11 +2359,15 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const clearedAiRunIds = new Set();
     const manualNoteOpenIds = new Set();
     const selectedRevisionIds = new Set();
+    const prefilterResultIds = new Set();
     const diffHtmlCache = new Map();
     let filteredRows = allRows;
     let currentPage = 1;
     let activeRowId = "";
     let lastAiRunId = "";
+    let latestPrefilterRunId = "";
+    let prefilterResultFilterActive = false;
+    let prefilterResultsCatchingUp = false;
     let lastAiResultRevision = 0;
     let aiMonitorRenderKey = "";
     let aiStatusRefreshInFlight = false;
@@ -2742,6 +2750,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.stop.disabled = true;
       aiIds.monitorEnabled.disabled = false;
       prefilterIds.start.disabled = false;
+      prefilterIds.confirm.disabled = true;
       prefilterIds.stop.disabled = true;
       prefilterIds.stats.textContent = "尚未运行预筛选。";
       aiIds.status.dataset.cacheCleared = "1";
@@ -2752,7 +2761,15 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.requestList.innerHTML = '<div class="ai-request-empty">启动 AI 校对后，这里会显示程序发给模型的问题和接口等待状态。</div>';
       aiMonitorRenderKey = "";
       aiActiveIds.clear();
+      prefilterResultIds.clear();
+      latestPrefilterRunId = "";
+      prefilterResultFilterActive = false;
+      prefilterResultsCatchingUp = false;
+      prefilterResultFilter.disabled = true;
+      prefilterResultFilter.classList.remove("is-active");
+      prefilterResultFilter.setAttribute("aria-pressed", "false");
       updateRenderedAiActive();
+      applyFilters({ reset: false });
     }
 
     function enhanceSelect(select) {
@@ -3373,6 +3390,32 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       });
     }
 
+    function prefilterResultKind(row) {
+      const marker = automatedNoteMarker(notes[String(row.index)]?.note || "");
+      if (marker === "[规则预筛]") return "rule";
+      if (marker === "[相似度预筛]") return "similarity";
+      return "";
+    }
+
+    function currentPrefilterRows() {
+      if (!prefilterResultFilterActive) return [];
+      return filteredRows.filter((row) => {
+        const id = String(row.index);
+        return prefilterResultIds.has(id) && prefilterResultKind(row) && !notes[id]?.manualDone;
+      });
+    }
+
+    function updatePrefilterConfirmButton(ai = null) {
+      if (
+        ai &&
+        ai.kind === "prefilter" &&
+        ai.runId === latestPrefilterRunId
+      ) {
+        prefilterResultsCatchingUp = Boolean(ai.running || ai.hasMoreResults);
+      }
+      prefilterIds.confirm.disabled = !prefilterResultFilterActive || prefilterResultsCatchingUp || currentPrefilterRows().length === 0;
+    }
+
     function matchesFilter(row, q) {
       const id = String(row.index);
       const hasNote = hasStoredNote(notes[id]);
@@ -3386,13 +3429,15 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         doneMode === "all" ||
         (doneMode === "open" && !isDone) ||
         (doneMode === "done" && isDone);
-      return matchesQuery && matchesSeverity && matchesAiResult && matchesIssueSeverity && matchesNotes && matchesDone;
+      const matchesPrefilterResult = !prefilterResultFilterActive || prefilterResultIds.has(id);
+      return matchesQuery && matchesSeverity && matchesAiResult && matchesIssueSeverity && matchesNotes && matchesDone && matchesPrefilterResult;
     }
 
     function applyFilters({ reset = true } = {}) {
       const q = query.value.trim().toLowerCase();
       filteredRows = allRows.filter((row) => matchesFilter(row, q));
       renderVisibleRows({ reset });
+      updatePrefilterConfirmButton();
     }
 
     function scheduleFilter() {
@@ -3523,6 +3568,12 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       notesOnly = !notesOnly;
       noteFilter.classList.toggle("is-active", notesOnly);
       noteFilter.setAttribute("aria-pressed", String(notesOnly));
+      applyFilters();
+    });
+    prefilterResultFilter.addEventListener("click", () => {
+      prefilterResultFilterActive = !prefilterResultFilterActive;
+      prefilterResultFilter.classList.toggle("is-active", prefilterResultFilterActive);
+      prefilterResultFilter.setAttribute("aria-pressed", String(prefilterResultFilterActive));
       applyFilters();
     });
     doneFilter.addEventListener("click", () => {
@@ -3685,11 +3736,14 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       issueSeverityFilter = "all";
       notesOnly = false;
       doneMode = "all";
+      prefilterResultFilterActive = false;
       for (const button of severityButtons) button.classList.toggle("is-active", button.dataset.severity === "all");
       for (const button of aiResultButtons) button.classList.toggle("is-active", button.dataset.aiResult === "all");
       for (const button of issueSeverityButtons) button.classList.toggle("is-active", button.dataset.issueSeverity === "all");
       noteFilter.classList.remove("is-active");
       noteFilter.setAttribute("aria-pressed", "false");
+      prefilterResultFilter.classList.remove("is-active");
+      prefilterResultFilter.setAttribute("aria-pressed", "false");
       doneFilter.classList.remove("is-active");
       doneFilter.setAttribute("aria-pressed", "false");
       doneFilter.textContent = "未人工确认";
@@ -3798,6 +3852,34 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       selectedRevisionIds.clear();
       applyFilters({ reset: false });
       setTemporaryStatus("已将 " + entries.length + " 处修改结果标记为人工确认。", 5000);
+      tableFrame.scrollTop = 0;
+    });
+
+    prefilterIds.confirm.addEventListener("click", () => {
+      const rows = currentPrefilterRows();
+      if (!rows.length) {
+        setTemporaryStatus("当前筛选结果中没有待确认的预筛通过行。", 5000);
+        updatePrefilterConfirmButton();
+        return;
+      }
+      const counts = rows.reduce((result, row) => {
+        const kind = prefilterResultKind(row);
+        if (kind) result[kind] += 1;
+        return result;
+      }, { rule: 0, similarity: 0 });
+      const message = "当前预筛结果共 " + rows.length + " 条：规则通过 " + counts.rule + " 条，相似度通过 " + counts.similarity + " 条。\\n\\n确认后将为这些行勾选“人工确认”。是否继续？";
+      if (!confirm(message)) return;
+      for (const row of rows) {
+        const id = String(row.index);
+        const current = notes[id] || { note: "", manualNote: "", done: false, manualDone: false, aiDone: false };
+        current.manualDone = true;
+        current.done = true;
+        notes[id] = current;
+      }
+      saveNotes();
+      updateDoneCount();
+      applyFilters({ reset: false });
+      setTemporaryStatus("已将 " + rows.length + " 条预筛结果标记为人工确认。", 7000);
       tableFrame.scrollTop = 0;
     });
 
@@ -4073,6 +4155,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           }
           appliedResult = true;
           pendingResults.push(result);
+          if (
+            isPrefilter &&
+            aiRunId === latestPrefilterRunId &&
+            (result.status === "rule-prefilter" || result.status === "similarity-prefilter")
+          ) {
+            prefilterResultIds.add(String(result.index));
+          }
         }
         for (const result of pendingResults) {
           writeNote(String(result.index), result.note || "", Boolean(result.done), { deferCommit: true });
@@ -4088,9 +4177,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         setRuntimeStatus("已忽略非当前项目快照的自动结果；当前项目备注保持独立。");
       }
       lastAiResultRevision = Math.max(lastAiResultRevision, Number(ai.resultRevision) || 0);
-      if (appliedResult && (query.value.trim() || notesOnly || doneMode !== "all" || aiResultFilter !== "all" || issueSeverityFilter !== "all")) {
+      if (appliedResult && (prefilterResultFilterActive || query.value.trim() || notesOnly || doneMode !== "all" || aiResultFilter !== "all" || issueSeverityFilter !== "all")) {
         applyFilters({ reset: false });
       }
+      updatePrefilterConfirmButton(ai);
     }
 
     async function refreshAiStatus() {
@@ -4256,6 +4346,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     prefilterIds.start.addEventListener("click", async () => {
       statusMessageLockedUntil = 0;
       prefilterIds.start.disabled = true;
+      prefilterIds.confirm.disabled = true;
       prefilterIds.panel.open = true;
       setRuntimeStatus("正在运行预筛选...");
       try {
@@ -4275,11 +4366,20 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
+        latestPrefilterRunId = data.ai?.runId || "";
+        prefilterResultIds.clear();
+        prefilterResultFilterActive = true;
+        prefilterResultsCatchingUp = true;
+        prefilterResultFilter.disabled = false;
+        prefilterResultFilter.classList.add("is-active");
+        prefilterResultFilter.setAttribute("aria-pressed", "true");
         renderAiStatus(data.ai);
+        applyFilters();
         refreshAiStatus();
       } catch (error) {
         setRuntimeStatus(error.message);
         prefilterIds.start.disabled = false;
+        updatePrefilterConfirmButton();
       }
     });
     prefilterIds.stop.addEventListener("click", async () => {

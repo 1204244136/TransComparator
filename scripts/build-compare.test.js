@@ -93,6 +93,8 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(html, /id="prefilterPanel"/);
   assert.match(html, /id="prefilterSimilarity"/);
   assert.match(html, /id="prefilterStart"/);
+  assert.match(html, /id="prefilterConfirm"[^>]*disabled/);
+  assert.match(html, /id="prefilterResultFilter"[^>]*disabled>预筛结果/);
   assert.doesNotMatch(html, /id="aiSimilarity"/);
   assert.match(html, /class="filter-bar"/);
   assert.match(html, /class="action-bar"/);
@@ -108,6 +110,14 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(script, /\/api\/prefilter\/stop/);
   assert.match(script, /similarityThreshold: parsePercentRatio\(prefilterIds\.similarity\.value\)/);
   assert.match(script, /const prefilterIds = \{/);
+  assert.match(script, /const prefilterResultIds = new Set\(\)/);
+  assert.match(script, /let prefilterResultsCatchingUp = false/);
+  assert.match(script, /result\.status === "rule-prefilter" \|\| result\.status === "similarity-prefilter"/);
+  assert.match(script, /const matchesPrefilterResult = !prefilterResultFilterActive \|\| prefilterResultIds\.has\(id\)/);
+  assert.match(script, /prefilterResultFilter\.classList\.add\("is-active"\)/);
+  assert.match(script, /prefilterIds\.confirm\.disabled = !prefilterResultFilterActive \|\| prefilterResultsCatchingUp/);
+  assert.match(script, /当前预筛结果共 [\s\S]*?规则通过 [\s\S]*?相似度通过/);
+  assert.match(script, /prefilterIds\.confirm\.addEventListener\("click"[\s\S]*?current\.manualDone = true;[\s\S]*?applyFilters\(\{ reset: false \}\)/);
   assert.doesNotMatch(script, /aiIds\.similarity/);
   assert.match(script, /afterRevision/);
   assert.match(script, /knownRequestId/);
