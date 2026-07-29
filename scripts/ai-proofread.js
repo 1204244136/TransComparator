@@ -127,6 +127,7 @@ const errorCircuitBreaker = {
 
 const status = {
   running: false,
+  kind: "proofread",
   stopRequested: false,
   runId: "",
   startedAt: null,
@@ -194,6 +195,7 @@ function clientStatus(options = {}) {
       : status.resultRevision);
   return {
     running: status.running,
+    kind: status.kind,
     stopRequested: status.stopRequested,
     runId: status.runId,
     startedAt: status.startedAt,
@@ -315,6 +317,7 @@ function clampNumber(value, min, max, fallback) {
 
 function resetStatus(config, rowsLength) {
   status.running = true;
+  status.kind = config.kind || "proofread";
   status.stopRequested = false;
   status.runId = new Date().toISOString();
   status.startedAt = status.runId;
@@ -401,6 +404,56 @@ function addResult(result, { prefilterKind = "" } = {}) {
   }
   if (result.status === "suggestion") status.suggested += 1;
   if (result.status === "error") status.errors += 1;
+}
+
+async function startPrefilter(input) {
+  if (status.running) {
+    const error = new Error(status.kind === "prefilter" ? "预筛选正在运行。" : "AI 校对正在运行。");
+    error.code = "RUNNING";
+    throw error;
+  }
+
+  const config = cleanConfig(input);
+  const { project, rows } = readRows(config);
+  requireMatchingProjectSnapshot(config, project);
+  config.proofreadMode = project.comparisonMode === "bilingual" ? "bilingual" : "trilingual";
+  config.kind = "prefilter";
+  resetStatus(config, rows.length);
+  const labels = {
+    jp: "原文 A",
+    cn: "非原文 B",
+    tw: "非原文 C",
+    ...(input.labels || {}),
+  };
+
+  let pending = 0;
+  for (const row of rows) {
+    if (config.completedIndexes.has(Number(row.index))) {
+      status.skippedDone += 1;
+      continue;
+    }
+    const left = config.proofreadMode === "bilingual" ? (row.jp || "") : (row.cn || "");
+    const right = config.proofreadMode === "bilingual" ? (row.cn || "") : (row.twCn || toCn(row.tw || ""));
+    const classification = classifyPrefilter({
+      source: row.jp || "",
+      left,
+      right,
+      score: row.score,
+    }, config.similarityThreshold);
+    if (classification) {
+      const prefilterKind = classification.kind === "similarity"
+        ? "similarity"
+        : (classification.kind === "structured-conflict" ? "structured-conflict" : "rule");
+      addResult(makePrefilterResult(row, labels, classification, config.proofreadMode), { prefilterKind });
+    } else {
+      pending += 1;
+    }
+  }
+
+  status.queued = pending;
+  pushLog(`预筛选：人工确认跳过 ${status.skippedDone} 行，规则跳过 ${status.rulePrefiltered} 行，结构化冲突 ${status.structuredConflicts} 行，相似度跳过 ${status.similarityPrefiltered} 行，剩余 ${pending} 行需要 AI 校对。`);
+  finish();
+  return clientStatus({ includeResults: false });
 }
 
 async function startProofread(input) {
@@ -565,18 +618,19 @@ function modelFallbackForBaseUrl(baseUrl) {
 function stopProofread() {
   if (!status.running) return clientStatus({ includeResults: false });
   status.stopRequested = true;
-  pushLog("收到终止请求，正在停止新的 AI 调用。");
+  pushLog(status.kind === "prefilter" ? "收到终止请求，正在停止预筛选。" : "收到终止请求，正在停止新的 AI 调用。");
   for (const controller of controllers) controller.abort();
   return clientStatus({ includeResults: false });
 }
 
 function clearProofreadCache() {
   if (status.running) {
-    const error = new Error("AI 校对正在运行，请先停止任务再清除缓存。");
+    const error = new Error(status.kind === "prefilter" ? "预筛选正在运行，请先停止任务再清除缓存。" : "AI 校对正在运行，请先停止任务再清除缓存。");
     error.code = "RUNNING";
     throw error;
   }
   status.stopRequested = false;
+  status.kind = "proofread";
   status.runId = "";
   status.startedAt = null;
   status.finishedAt = null;
@@ -648,10 +702,11 @@ function finish() {
   if (!status.running) return;
   status.running = false;
   status.finishedAt = new Date().toISOString();
+  const isPrefilter = status.kind === "prefilter";
   if (status.stopRequested) {
-    pushLog("AI 校对已终止。");
+    pushLog(isPrefilter ? "预筛选已终止。" : "AI 校对已终止。");
   } else {
-    pushLog("AI 校对完成。");
+    pushLog(isPrefilter ? "预筛选完成。" : "AI 校对完成。");
   }
 }
 
@@ -1283,6 +1338,7 @@ module.exports = {
   proofreadPrompt,
   proofreadPromptFor,
   proofreadPrompts,
+  startPrefilter,
   startProofread,
   stopProofread,
 };

@@ -20,6 +20,7 @@ const {
   clearProofreadCache,
   clientStatus: aiProofreadStatus,
   listModels,
+  startPrefilter,
   startProofread,
   stopProofread,
 } = require("./ai-proofread");
@@ -53,6 +54,10 @@ function sendJson(res, status, payload) {
 
 function sendError(res, status, error) {
   sendJson(res, status, { ok: false, error: error.message || String(error) });
+}
+
+function runningTaskLabel() {
+  return aiProofreadStatus().kind === "prefilter" ? "预筛选" : "AI 校对";
 }
 
 function readJson(req, maxBytes = 128 * 1024 * 1024) {
@@ -250,7 +255,7 @@ async function handleApi(req, res, pathname, searchParams) {
         return;
       }
       if (aiProofreadStatus().running) {
-        sendJson(res, 409, { ok: false, error: "AI 校对正在运行，请先停止后再切换项目。" });
+        sendJson(res, 409, { ok: false, error: `${runningTaskLabel()}正在运行，请先停止后再切换项目。` });
         return;
       }
       clearProofreadCache();
@@ -294,7 +299,7 @@ async function handleApi(req, res, pathname, searchParams) {
         return;
       }
       if (aiProofreadStatus().running) {
-        sendJson(res, 409, { ok: false, error: "AI 校对正在运行，请先停止后再生成新的工作台。", pipeline: generation.status(), ai: aiProofreadStatus() });
+        sendJson(res, 409, { ok: false, error: `${runningTaskLabel()}正在运行，请先停止后再生成新的工作台。`, pipeline: generation.status(), ai: aiProofreadStatus() });
         return;
       }
       if (!fs.existsSync(selectionFile)) {
@@ -349,6 +354,21 @@ async function handleApi(req, res, pathname, searchParams) {
       } catch (error) {
         sendJson(res, error.code === "RUNNING" ? 409 : 400, { ok: false, error: error.message, ai: aiProofreadStatus() });
       }
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/prefilter/start") {
+      const payload = await readJson(req);
+      try {
+        sendJson(res, 202, { ok: true, ai: await startPrefilter(payload) });
+      } catch (error) {
+        sendJson(res, error.code === "RUNNING" ? 409 : 400, { ok: false, error: error.message, ai: aiProofreadStatus() });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/prefilter/stop") {
+      sendJson(res, 200, { ok: true, ai: stopProofread() });
       return;
     }
 

@@ -7,25 +7,41 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f3f5f8;
+      --bg: #eef1f6;
       --surface: #ffffff;
-      --surface-subtle: #f8fafc;
-      --head: #eef2f6;
-      --line: #d8e0ea;
-      --line-strong: #b8c4d4;
-      --text: #182230;
-      --muted: #667085;
-      --muted-2: #8a95a6;
-      --focus: #245fb8;
-      --focus-hover: #1d4f9a;
-      --ok: #edf8f1;
-      --ok-strong: #157a3a;
-      --warn: #fff7df;
-      --warn-strong: #9a6700;
-      --danger: #fff1f0;
-      --danger-strong: #bd2b22;
-      --radius: 6px;
-      --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.04);
+      --surface-subtle: #f6f8fb;
+      --surface-raised: #ffffff;
+      --head: #eaeef4;
+      --line: #dde3ec;
+      --line-strong: #c3ccd9;
+      --text: #161d27;
+      --muted: #5b6675;
+      --muted-2: #8a94a4;
+      --focus: #2a63cf;
+      --focus-hover: #1f4fa6;
+      --review: #fdeceb;
+      --review-strong: #c2392f;
+      --watch: #fdf3d8;
+      --watch-strong: #946312;
+      --ok: #e6f4ec;
+      --ok-strong: #1c7a42;
+      --info: #e9f1ff;
+      --info-strong: #2a63cf;
+      --radius: 8px;
+      --radius-sm: 6px;
+      --radius-pill: 999px;
+      --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 1px rgba(16, 24, 40, 0.03);
+      --shadow-pop: 0 12px 28px rgba(16, 24, 40, 0.16);
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 24px;
+      --space-6: 32px;
+      --fs-page: 18px;
+      --fs-section: 13px;
+      --fs-body: 14px;
+      --fs-caption: 12px;
     }
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
@@ -44,10 +60,9 @@
       position: sticky;
       top: 0;
       z-index: 3;
-      padding: 16px 22px 13px;
+      padding: var(--space-4) 22px 13px;
       border-bottom: 1px solid var(--line);
-      background: rgba(245, 247, 250, 0.97);
-      backdrop-filter: blur(8px);
+      background: var(--surface);
     }
     h1 {
       margin: 0 0 4px;
@@ -77,7 +92,7 @@
     }
     .col-head h2 {
       margin: 0;
-      font-size: 13px;
+      font-size: var(--fs-section);
       font-weight: 800;
       letter-spacing: 0.04em;
       text-transform: uppercase;
@@ -100,7 +115,7 @@
       overflow: hidden;
     }
     .panel {
-      padding: 14px;
+      padding: var(--space-4);
     }
     .work-panel {
       padding: 18px;
@@ -120,6 +135,11 @@
     }
     .scope-head h2 {
       margin: 0;
+      font-size: var(--fs-section);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
     }
     .scope-grid {
       display: grid;
@@ -238,8 +258,8 @@
     .dropzone:hover,
     .dropzone.is-dragover {
       border-color: var(--focus);
-      background: #f4f8ff;
-      color: var(--focus);
+      background: var(--info);
+      color: var(--info-strong);
     }
     .dropzone.has-file {
       border-style: solid;
@@ -298,6 +318,16 @@
       font-size: 13px;
       font-weight: 700;
     }
+    .field {
+      display: grid;
+      gap: var(--space-1);
+    }
+    .field__label {
+      margin: 0;
+      color: var(--muted);
+      font-size: var(--fs-caption);
+      font-weight: 700;
+    }
     input,
     select,
     button,
@@ -337,21 +367,33 @@
       background: var(--surface-subtle);
     }
     button:hover,
-    a.button:hover,
+    a.btn:hover,
     input:hover,
     select:hover,
     textarea:hover {
       border-color: var(--line-strong);
     }
-    button.primary {
-      border-color: var(--focus);
-      background: var(--focus);
-      color: #fff;
+    .btn {
+      height: 32px;
+      padding: 0 var(--space-3);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 700;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-1);
+      text-decoration: none;
     }
-    button.primary:hover {
-      border-color: var(--focus-hover);
-      background: var(--focus-hover);
-    }
+    .btn:hover { border-color: var(--line-strong); }
+    .btn--primary { border-color: var(--focus); background: var(--focus); color: #fff; }
+    .btn--primary:hover { border-color: var(--focus-hover); background: var(--focus-hover); }
+    .btn--danger { border-color: #e6aaa5; background: var(--review); color: var(--review-strong); }
+    .btn--ghost { border-color: var(--line); background: var(--surface-subtle); color: var(--muted); }
+    .btn:disabled, .btn.disabled { cursor: not-allowed; opacity: 0.56; pointer-events: none; }
     button:disabled {
       cursor: not-allowed;
       opacity: 0.56;
@@ -382,8 +424,8 @@
       font-size: 13px;
     }
     .status.ok { background: var(--ok); color: var(--ok-strong); border-color: #b8dec5; }
-    .status.warn { background: var(--warn); color: var(--warn-strong); border-color: #ead08d; }
-    .status.error { background: var(--danger); color: var(--danger-strong); border-color: #f1b6b0; }
+    .status.warn { background: var(--watch); color: var(--watch-strong); border-color: #ead08d; }
+    .status.error { background: var(--review); color: var(--review-strong); border-color: #f1b6b0; }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -565,7 +607,7 @@
       transition: width 520ms cubic-bezier(.22, .8, .25, 1), background-color 180ms ease;
     }
     .progress-bar.is-done { background: var(--ok-strong); }
-    .progress-bar.is-failed { background: var(--danger-strong); }
+    .progress-bar.is-failed { background: var(--review-strong); }
     .run-actions {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -576,28 +618,6 @@
       grid-template-columns: minmax(0, 1fr) 120px 120px;
       gap: 8px;
       align-items: center;
-    }
-    button.danger {
-      border-color: #e6aaa5;
-      background: var(--danger);
-      color: var(--danger-strong);
-    }
-    a.button {
-      display: inline-grid;
-      place-items: center;
-      height: 36px;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--surface-subtle);
-      color: var(--text);
-      text-decoration: none;
-      font-weight: 700;
-      font-size: 14px;
-      transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
-    }
-    a.button.disabled {
-      pointer-events: none;
-      opacity: 0.56;
     }
     @media (max-width: 980px) {
       main {
@@ -708,8 +728,8 @@
           </div>
           <div class="slot-actions">
             <div class="actions">
-              <button id="saveButton" class="primary" type="button" disabled>保存选择</button>
-              <button id="resetButton" type="button">清空表单</button>
+              <button id="saveButton" class="btn btn--primary" type="button" disabled>保存选择</button>
+              <button id="resetButton" class="btn btn--ghost" type="button">清空表单</button>
             </div>
           </div>
         </div>
@@ -718,16 +738,16 @@
       <details>
         <summary>正文起始短语（可选）</summary>
         <div class="stack">
-          <div>
-            <label for="jpStart">原文 A 起始短语</label>
+          <div class="field">
+            <label class="field__label" for="jpStart">原文 A 起始短语</label>
             <textarea id="jpStart" placeholder="可留空"></textarea>
           </div>
-          <div>
-            <label for="cnStart">非原文 B 起始短语</label>
+          <div class="field">
+            <label class="field__label" for="cnStart">非原文 B 起始短语</label>
             <textarea id="cnStart" placeholder="可留空"></textarea>
           </div>
-          <div id="twStartField">
-            <label for="twStart">非原文 C 起始短语</label>
+          <div id="twStartField" class="field">
+            <label class="field__label" for="twStart">非原文 C 起始短语</label>
             <textarea id="twStart" placeholder="可留空"></textarea>
           </div>
         </div>
@@ -779,7 +799,7 @@
               <option value="">尚无已生成项目</option>
             </select>
           </div>
-          <button id="switchProjectButton" type="button" disabled>切换项目</button>
+          <button id="switchProjectButton" class="btn btn--ghost" type="button" disabled>切换项目</button>
         </div>
         <div id="projectSummary" class="project-summary">生成完成的工作台会保存在这里。</div>
       </div>
@@ -808,8 +828,8 @@
         </div>
         <div id="generateHint" class="subtle">保存 A、B、C 三份输入后生成三语工作台；AI 可修改 B 或 C。</div>
         <div class="run-actions">
-          <button id="runButton" class="primary" type="button" disabled>开始生成</button>
-          <a id="openOutput" class="button disabled" href="#" target="_blank" rel="noreferrer">打开工作台</a>
+          <button id="runButton" class="btn btn--primary" type="button" disabled>开始生成</button>
+          <a id="openOutput" class="btn btn--ghost disabled" href="#" target="_blank" rel="noreferrer">打开工作台</a>
         </div>
         <div id="runStatus" class="status">等待保存输入选择。</div>
         <div class="progress-panel" aria-label="生成进度">
@@ -825,8 +845,8 @@
         <div class="subtle">AI 校对的配置和启动在工作台中完成；修改列和参考范围由当前比较模式决定。控制台只显示运行状态并提供紧急终止。</div>
         <div class="task-actions">
           <div id="aiStatus" class="status">没有后台 AI 任务。</div>
-          <a id="openOutputForAi" class="button disabled" href="#" target="_blank" rel="noreferrer">打开工作台</a>
-          <button id="aiStopButton" class="danger" type="button" disabled>终止任务</button>
+          <a id="openOutputForAi" class="btn btn--ghost disabled" href="#" target="_blank" rel="noreferrer">打开工作台</a>
+          <button id="aiStopButton" class="btn btn--danger" type="button" disabled>终止任务</button>
         </div>
       </div>
     </section>

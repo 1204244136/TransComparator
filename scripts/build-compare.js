@@ -738,26 +738,41 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
   <style>
     :root {
       color-scheme: light;
-      --bg: #f3f5f8;
+      --bg: #eef1f6;
       --surface: #ffffff;
-      --surface-subtle: #f8fafc;
-      --head: #eef2f6;
-      --line: #d8e0ea;
-      --line-strong: #b8c4d4;
-      --text: #182230;
-      --muted: #667085;
-      --muted-2: #8a95a6;
-      --focus: #245fb8;
-      --focus-hover: #1d4f9a;
-      --review: #fff1f0;
-      --review-strong: #bd2b22;
-      --watch: #fff7df;
-      --watch-strong: #9a6700;
-      --ok: #edf8f1;
-      --ok-strong: #157a3a;
-      --info: #eef5ff;
-      --radius: 6px;
-      --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.04);
+      --surface-subtle: #f6f8fb;
+      --surface-raised: #ffffff;
+      --head: #eaeef4;
+      --line: #dde3ec;
+      --line-strong: #c3ccd9;
+      --text: #161d27;
+      --muted: #5b6675;
+      --muted-2: #8a94a4;
+      --focus: #2a63cf;
+      --focus-hover: #1f4fa6;
+      --review: #fdeceb;
+      --review-strong: #c2392f;
+      --watch: #fdf3d8;
+      --watch-strong: #946312;
+      --ok: #e6f4ec;
+      --ok-strong: #1c7a42;
+      --info: #e9f1ff;
+      --info-strong: #2a63cf;
+      --radius: 8px;
+      --radius-sm: 6px;
+      --radius-pill: 999px;
+      --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 1px rgba(16, 24, 40, 0.03);
+      --shadow-pop: 0 12px 28px rgba(16, 24, 40, 0.16);
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 24px;
+      --space-6: 32px;
+      --fs-page: 18px;
+      --fs-section: 13px;
+      --fs-body: 14px;
+      --fs-caption: 12px;
     }
     * { box-sizing: border-box; }
     html {
@@ -768,8 +783,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       background: var(--bg);
       color: var(--text);
       font-family: "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
-      font-size: 15px;
-      line-height: 1.7;
+      font-size: var(--fs-body);
+      line-height: 1.65;
       text-wrap: pretty;
     }
     .app-shell {
@@ -779,30 +794,30 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       position: sticky;
       top: 0;
       z-index: 5;
-      padding: 12px 18px 11px;
+      padding: var(--space-3) var(--space-4) var(--space-2);
       border-bottom: 1px solid var(--line);
-      background: #f5f7fa;
+      background: var(--surface);
     }
     .topbar {
       display: grid;
       grid-template-columns: minmax(220px, 1fr) auto;
-      gap: 16px;
+      gap: var(--space-4);
       align-items: center;
     }
     h1 {
-      margin: 0 0 4px;
-      font-size: 18px;
+      margin: 0 0 var(--space-1);
+      font-size: var(--fs-page);
       line-height: 1.3;
       letter-spacing: 0;
     }
     .subtle {
       color: var(--muted);
-      font-size: 13px;
+      font-size: var(--fs-section);
     }
     .files {
-      margin-top: 5px;
+      margin-top: var(--space-1);
       color: var(--muted-2);
-      font-size: 12px;
+      font-size: var(--fs-caption);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -812,16 +827,16 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       display: flex;
       flex-wrap: wrap;
       justify-content: flex-end;
-      gap: 6px;
-      max-width: 520px;
+      gap: var(--space-2);
+      max-width: 540px;
     }
     .stat {
-      min-width: 76px;
-      padding: 6px 8px;
+      min-width: 78px;
+      padding: var(--space-2) var(--space-2);
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: var(--radius-sm);
       background: var(--surface);
-      font-size: 12px;
+      font-size: var(--fs-caption);
       line-height: 1.25;
       box-shadow: var(--shadow-panel);
     }
@@ -831,23 +846,138 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       font-size: 16px;
       line-height: 1.2;
     }
-    .stat.review { background: var(--review); border-color: #f1b6b0; }
-    .stat.watch { background: var(--watch); border-color: #ead08d; }
-    .stat.ok { background: var(--ok); border-color: #b8dec5; }
+    .stat.review { background: var(--review); border-color: #f0b8b3; }
+    .stat.watch { background: var(--watch); border-color: #e6cd86; }
+    .stat.ok { background: var(--ok); border-color: #b3d9bf; }
     .stat-divider {
       align-self: stretch;
       width: 1px;
       margin: 2px 2px;
       background: var(--line-strong);
     }
-    .toolbar {
+    .control-stack {
       display: grid;
-      grid-template-columns: minmax(280px, 1fr) minmax(540px, auto) auto;
-      gap: 10px;
-      margin-top: 11px;
-      padding-top: 11px;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-4) 0;
+    }
+    .panel-details {
+      margin: 0;
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface-subtle);
+    }
+    .panel-details[open] {
+      background: var(--surface);
+    }
+    .panel-summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-3);
+      margin: 0;
+      font-size: var(--fs-section);
+      line-height: 1.3;
+      font-weight: 700;
+      cursor: default;
+      list-style: none;
+    }
+    .panel-summary::-webkit-details-marker {
+      display: none;
+    }
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .filter-search {
+      flex: 1 1 220px;
+      min-width: 180px;
+      max-width: 360px;
+    }
+    .filter-groups {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2);
+      min-width: 0;
+    }
+    .action-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .action-group {
+      display: inline-flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2);
+      min-width: 0;
+    }
+    .action-group + .action-group {
+      padding-left: var(--space-3);
+      border-left: 1px solid var(--line);
+    }
+    .action-group__label {
+      color: var(--muted-2);
+      font-size: var(--fs-caption);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .toggle-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      color: var(--muted);
+      font-size: var(--fs-caption);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .prefilter-body {
+      display: grid;
+      gap: var(--space-3);
+      padding-top: var(--space-3);
       border-top: 1px solid var(--line);
+      margin-top: var(--space-2);
+    }
+    .prefilter-config {
+      display: grid;
+      grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+      gap: var(--space-3);
       align-items: start;
+    }
+    .prefilter-hint {
+      align-self: center;
+      color: var(--muted);
+      font-size: var(--fs-caption);
+      line-height: 1.5;
+    }
+    .prefilter-runbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+    .prefilter-stats {
+      min-width: 0;
+      color: var(--muted);
+      font-size: var(--fs-caption);
+    }
+    .prefilter-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
     }
     input, select, button, textarea {
       height: 32px;
@@ -975,134 +1105,110 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     button:hover, select:hover, input:hover {
       border-color: var(--line-strong);
     }
-    .filter-panel {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      min-width: 0;
-    }
-    .filter-group {
+    .segmented {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--space-1);
       min-width: 0;
       padding: 2px;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: var(--radius-pill);
       background: var(--surface);
     }
-    .filter-group-label {
-      padding: 0 5px 0 6px;
+    .segmented__label {
+      padding: 0 var(--space-1) 0 var(--space-2);
       color: var(--muted-2);
-      font-size: 11px;
+      font-size: var(--fs-caption);
       font-weight: 800;
       white-space: nowrap;
     }
-    .segmented {
-      display: inline-flex;
-      min-width: 0;
-      padding: 2px;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--surface);
-    }
-    .filter-group .segmented {
-      padding: 0;
+    .segmented__btn {
+      height: 26px;
+      padding: 0 var(--space-2);
       border: 0;
-      background: transparent;
-    }
-    .segmented button,
-    .filter-chip {
-      height: 28px;
-      border: 0;
-      border-radius: 4px;
+      border-radius: var(--radius-pill);
       background: transparent;
       color: var(--muted);
       font-weight: 700;
       white-space: nowrap;
     }
-    .segmented button {
-      padding: 0 8px;
-    }
-    .filter-chip {
-      padding: 0 9px;
-      border: 1px solid var(--line);
-      background: var(--surface);
-    }
-    .segmented button:hover,
-    .filter-chip:hover {
+    .segmented__btn:hover {
       background: var(--surface-subtle);
       color: var(--text);
     }
-    .segmented button.is-active,
-    .filter-chip.is-active {
+    .segmented__btn.is-active {
       background: var(--info);
       color: var(--focus-hover);
     }
-    .filter-chip.is-active {
-      border-color: color-mix(in srgb, var(--focus) 28%, var(--line));
-    }
-    .toolbar-actions {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-    }
-    .display-toggles,
-    .action-buttons {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      min-width: 0;
-    }
-    .display-toggles {
-      min-height: 32px;
-      padding: 0 8px;
+    .chip {
+      height: 28px;
+      padding: 0 var(--space-3);
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: var(--radius-pill);
       background: var(--surface);
-    }
-    .display-toggles label {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
       color: var(--muted);
-      font-size: 12px;
       font-weight: 700;
       white-space: nowrap;
     }
-    button.primary {
-      border-color: var(--focus);
-      background: var(--focus);
-      color: #fff;
-      font-weight: 700;
+    .chip:hover {
+      border-color: var(--line-strong);
+      color: var(--text);
     }
-    button.primary:hover {
-      border-color: var(--focus-hover);
-      background: var(--focus-hover);
-    }
-    button.danger {
-      border-color: #e6aaa5;
-      background: var(--review);
-      color: var(--review-strong);
-      font-weight: 700;
-    }
-    button.accept-ai-same {
-      border-color: #b8dec5;
-      background: var(--ok);
-      color: var(--ok-strong);
-    }
-    button.ai-log-clear {
-      border-color: color-mix(in srgb, var(--focus) 24%, var(--line));
+    .chip.is-active {
+      border-color: color-mix(in srgb, var(--focus) 32%, var(--line));
       background: var(--info);
       color: var(--focus-hover);
     }
-    button.filter-clear {
-      color: var(--muted);
+    .btn {
+      height: 32px;
+      padding: 0 var(--space-3);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      border-color: var(--line-strong);
+    }
+    .btn--primary {
+      border-color: var(--focus);
+      background: var(--focus);
+      color: #fff;
+    }
+    .btn--primary:hover {
+      border-color: var(--focus-hover);
+      background: var(--focus-hover);
+    }
+    .btn--danger {
+      border-color: #e6aaa5;
+      background: var(--review);
+      color: var(--review-strong);
+    }
+    .btn--danger:hover {
+      border-color: #d98f89;
+    }
+    .btn--success {
+      border-color: #b3d9bf;
+      background: var(--ok);
+      color: var(--ok-strong);
+    }
+    .btn--success:hover {
+      border-color: #95cb9f;
+    }
+    .btn--subtle {
+      border-color: color-mix(in srgb, var(--focus) 22%, var(--line));
+      background: var(--info);
+      color: var(--focus-hover);
+    }
+    .btn--ghost {
+      border-color: var(--line);
       background: var(--surface-subtle);
+      color: var(--muted);
+    }
+    .btn--ghost:hover {
+      color: var(--text);
     }
     button:disabled {
       cursor: not-allowed;
@@ -1113,7 +1219,6 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       border-color: var(--focus);
     }
     .ai-panel {
-      margin-top: 11px;
       padding: 8px 10px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -1316,20 +1421,6 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     .ai-prompt-box {
       margin-top: 0;
     }
-    .ai-prompt-head {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 6px;
-    }
-    .ai-prompt-head label {
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.25;
-      font-weight: 700;
-    }
     .ai-prompt-actions {
       display: flex;
       gap: 8px;
@@ -1350,12 +1441,6 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       justify-content: space-between;
       gap: 10px;
       margin-bottom: 6px;
-    }
-    .ai-monitor-title {
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.25;
-      font-weight: 700;
     }
     .ai-monitor-state {
       color: var(--muted-2);
@@ -1926,11 +2011,12 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       th, td { padding: 8px; }
       .topbar { grid-template-columns: 1fr; }
       .stats { justify-content: flex-start; max-width: none; }
-      .toolbar { grid-template-columns: minmax(220px, 1fr); }
-      .filter-panel,
-      .toolbar-actions {
+      .filter-bar,
+      .action-bar,
+      .prefilter-runbar {
         justify-content: flex-start;
       }
+      .prefilter-config { grid-template-columns: 1fr; }
       .ai-config-band { grid-template-columns: 76px minmax(0, 1fr); }
       .ai-service-fields,
       .ai-service-fields.has-reasoning,
@@ -1962,55 +2048,71 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           <div class="stat"><strong id="aiDoneCount">0</strong>自动结果</div>
         </div>
       </div>
-      <div class="toolbar">
-        <input id="query" type="search" placeholder="搜索原文、译文、备注">
-        <div class="filter-panel" aria-label="筛选">
-          <div class="filter-group">
-            <span class="filter-group-label">相似度</span>
-            <div class="segmented" role="group" aria-label="相似度状态">
-              <button type="button" class="is-active" data-severity="all">全部</button>
-              <button type="button" data-severity="review" title="相似度低于 18%">较低</button>
-              <button type="button" data-severity="watch" title="相似度为 18% 至 35%">中等</button>
-              <button type="button" data-severity="ok" title="相似度不低于 35%">较高</button>
+    </header>
+    <div class="control-stack">
+      <details id="prefilterPanel" class="panel-details" aria-label="预筛选">
+        <summary class="panel-summary"><span>预筛选</span><button class="details-toggle" type="button" data-details-toggle aria-label="折叠或展开预筛选"></button></summary>
+        <div class="prefilter-body">
+          <div class="prefilter-config">
+            <div class="ai-field">
+              <label for="prefilterSimilarity">${escapeHtml(similarityLabel)}相似度预筛</label>
+              <input id="prefilterSimilarity" type="text" inputmode="decimal" value="92%" aria-label="${escapeHtml(similarityLabel)}相似度预筛百分比">
+            </div>
+            <p class="prefilter-hint">规则预筛统一繁简、全半角、空白和不可见字符；完全一致或两列均空直接通过，结构化内容不一致标记为冲突。相似度预筛只处理足够长的正文，数字或标识符不同、文本过短或长度差异明显时不启用。预筛结果会写入备注，AI 校对会跳过已通过预筛的行。</p>
+          </div>
+          <div class="prefilter-runbar">
+            <div id="prefilterStats" class="prefilter-stats" aria-live="polite">尚未运行预筛选。</div>
+            <div class="prefilter-actions">
+              <button id="prefilterStart" class="btn btn--primary" type="button">开始预筛</button>
+              <button id="prefilterStop" class="btn btn--danger" type="button" disabled>停止</button>
             </div>
           </div>
-          <div class="filter-group">
-            <span class="filter-group-label">自动</span>
-            <div class="segmented" role="group" aria-label="自动分析结果">
-              <button type="button" class="is-active" data-ai-result="all">全部</button>
-              <button type="button" data-ai-result="modify">需改</button>
-              <button type="button" data-ai-result="same">不改</button>
-              <button type="button" data-ai-result="unclear">待判</button>
-            </div>
-          </div>
-          <div class="filter-group">
-            <span class="filter-group-label" title="按 MQM 风格的问题严重程度筛选">分级</span>
-            <div class="segmented" role="group" aria-label="AI 问题严重程度">
-              <button type="button" class="is-active" data-issue-severity="all">全部</button>
-              <button type="button" data-issue-severity="critical" title="核心意义严重失真，或存在安全、法律等高风险后果">致命</button>
-              <button type="button" data-issue-severity="major" title="影响准确性、完整性或可用性">严重</button>
-              <button type="button" data-issue-severity="minor" title="不改变意义的局部语言或文体问题">轻微</button>
-            </div>
-          </div>
-          <button id="noteFilter" class="filter-chip" type="button" aria-pressed="false">有备注</button>
-          <button id="doneFilter" class="filter-chip" type="button" data-mode="open" aria-pressed="false">未人工确认</button>
         </div>
-        <div class="toolbar-actions">
-          <div class="display-toggles" aria-label="显示列">
-            <label><input id="showSource" type="checkbox" checked>原文</label>
-            <label${bilingual ? " hidden" : ""}><input id="showTranslationDiff" type="checkbox" checked>译文差异</label>
-            <label><input id="showRevisionDiff" type="checkbox" checked>修改差异</label>
+      </details>
+      <div class="filter-bar" aria-label="筛选">
+        <input id="query" class="filter-search" type="search" placeholder="搜索原文、译文、备注">
+        <div class="filter-groups">
+          <div class="segmented" role="group" aria-label="相似度状态">
+            <span class="segmented__label">相似度</span>
+            <button type="button" class="segmented__btn is-active" data-severity="all">全部</button>
+            <button type="button" class="segmented__btn" data-severity="review" title="相似度低于 18%">较低</button>
+            <button type="button" class="segmented__btn" data-severity="watch" title="相似度为 18% 至 35%">中等</button>
+            <button type="button" class="segmented__btn" data-severity="ok" title="相似度不低于 35%">较高</button>
           </div>
-          <div class="action-buttons">
-            <button id="acceptAiSame" class="accept-ai-same" type="button">确认自动不改</button>
-            <button id="exportNotes" type="button">导出修改结果</button>
-            <button id="confirmRevisions" type="button">确认修改结果</button>
-            <button id="clearAiLog" class="ai-log-clear" type="button">清AI记录</button>
-            <button id="clearFilter" class="filter-clear" type="button">清筛选</button>
+          <div class="segmented" role="group" aria-label="自动分析结果">
+            <span class="segmented__label">自动</span>
+            <button type="button" class="segmented__btn is-active" data-ai-result="all">全部</button>
+            <button type="button" class="segmented__btn" data-ai-result="modify">需改</button>
+            <button type="button" class="segmented__btn" data-ai-result="same">不改</button>
+            <button type="button" class="segmented__btn" data-ai-result="unclear">待判</button>
           </div>
+          <div class="segmented" role="group" aria-label="AI 问题严重程度">
+            <span class="segmented__label" title="按 MQM 风格的问题严重程度筛选">分级</span>
+            <button type="button" class="segmented__btn is-active" data-issue-severity="all">全部</button>
+            <button type="button" class="segmented__btn" data-issue-severity="critical" title="核心意义严重失真，或存在安全、法律等高风险后果">致命</button>
+            <button type="button" class="segmented__btn" data-issue-severity="major" title="影响准确性、完整性或可用性">严重</button>
+            <button type="button" class="segmented__btn" data-issue-severity="minor" title="不改变意义的局部语言或文体问题">轻微</button>
+          </div>
+          <button id="noteFilter" class="chip" type="button" aria-pressed="false">有备注</button>
+          <button id="doneFilter" class="chip" type="button" data-mode="open" aria-pressed="false">未人工确认</button>
+        </div>
+        <button id="clearFilter" class="btn btn--ghost" type="button">清筛选</button>
+      </div>
+      <div class="action-bar">
+        <div class="action-group" aria-label="显示设置">
+          <span class="action-group__label">显示</span>
+          <label class="toggle-inline"><input id="showSource" type="checkbox" checked>原文</label>
+          <label class="toggle-inline"${bilingual ? " hidden" : ""}><input id="showTranslationDiff" type="checkbox" checked>译文差异</label>
+          <label class="toggle-inline"><input id="showRevisionDiff" type="checkbox" checked>修改差异</label>
+        </div>
+        <div class="action-group" aria-label="修改结果操作">
+          <span class="action-group__label">修改结果</span>
+          <button id="acceptAiSame" class="btn btn--success" type="button">确认自动不改</button>
+          <button id="exportNotes" class="btn" type="button">导出修改结果</button>
+          <button id="confirmRevisions" class="btn" type="button">确认修改结果</button>
         </div>
       </div>
-      <details id="aiPanel" class="ai-panel" aria-label="AI 校对">
+      <details id="aiPanel" class="panel-details ai-panel" aria-label="AI 校对">
         <summary class="ai-panel-title"><span>AI 辅助校对</span><button class="details-toggle" type="button" data-details-toggle aria-label="折叠或展开 AI 辅助校对"></button></summary>
         <div id="aiConfigSection" class="ai-config-stack">
           <section class="ai-config-band ai-service-band" aria-labelledby="aiServiceLabel">
@@ -2069,10 +2171,6 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
                 <label for="aiConcurrency">并发</label>
                 <input id="aiConcurrency" type="number" min="1" max="12" value="3">
               </div>
-              <div class="ai-field">
-                <label for="aiSimilarity">${escapeHtml(similarityLabel)}相似度预筛选</label>
-                <input id="aiSimilarity" type="text" inputmode="decimal" value="92%" aria-label="${escapeHtml(similarityLabel)}相似度预筛选百分比">
-              </div>
             </div>
           </section>
         </div>
@@ -2086,8 +2184,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             <div id="aiProgressWrap" class="ai-progress" aria-hidden="true" hidden><span id="aiProgress"></span></div>
           </div>
           <div class="ai-actions">
-            <button id="aiStart" class="primary" type="button">开始</button>
-            <button id="aiStop" class="danger" type="button" disabled>停止</button>
+            <button id="aiStart" class="btn btn--primary" type="button">开始</button>
+            <button id="aiStop" class="btn btn--danger" type="button" disabled>停止</button>
+            <button id="clearAiLog" class="btn btn--subtle" type="button">清AI记录</button>
           </div>
         </div>
         <details id="aiMonitorSection" class="ai-section" open>
@@ -2110,7 +2209,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           </div>
         </details>
       </details>
-    </header>
+    </div>
     <main class="wrap">
       <div class="table-frame">
         <table>
@@ -2230,7 +2329,6 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       proofreadMode: document.getElementById("aiProofreadMode"),
       target: document.getElementById("aiTarget"),
       concurrency: document.getElementById("aiConcurrency"),
-      similarity: document.getElementById("aiSimilarity"),
       monitorEnabled: document.getElementById("aiMonitorEnabled"),
       promptVisible: document.getElementById("aiPromptVisible"),
       start: document.getElementById("aiStart"),
@@ -2243,6 +2341,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       requestList: document.getElementById("aiRequestList"),
       prompt: document.getElementById("aiPrompt"),
       promptReset: document.getElementById("aiPromptReset"),
+    };
+    const prefilterIds = {
+      panel: document.getElementById("prefilterPanel"),
+      similarity: document.getElementById("prefilterSimilarity"),
+      stats: document.getElementById("prefilterStats"),
+      start: document.getElementById("prefilterStart"),
+      stop: document.getElementById("prefilterStop"),
     };
     const appliedAiResults = new Set();
     const aiActiveIds = new Set();
@@ -2346,7 +2451,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     }
 
     function normalizeSimilarityInput() {
-      aiIds.similarity.value = formatPercentRatio(aiIds.similarity.value);
+      prefilterIds.similarity.value = formatPercentRatio(prefilterIds.similarity.value);
     }
 
     function updateProofreadModeHint() {
@@ -2512,7 +2617,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         proofreadMode: aiIds.proofreadMode.value,
         target: aiIds.target.value,
         concurrency: aiIds.concurrency.value,
-        similarity: formatPercentRatio(aiIds.similarity.value),
+        similarity: formatPercentRatio(prefilterIds.similarity.value),
         monitorEnabled: aiIds.monitorEnabled.checked,
         promptVisible: aiIds.promptVisible.checked,
       };
@@ -2556,7 +2661,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       if (saved.target === "cn" || saved.target === "tw") aiIds.target.value = saved.target;
       if (bilingualMode) aiIds.target.value = "cn";
       if (saved.concurrency != null) aiIds.concurrency.value = saved.concurrency;
-      if (saved.similarity != null) aiIds.similarity.value = formatPercentRatio(saved.similarity);
+      if (saved.similarity != null) prefilterIds.similarity.value = formatPercentRatio(saved.similarity);
       aiIds.monitorEnabled.checked = Boolean(saved.monitorEnabled);
       aiIds.promptVisible.checked = Boolean(saved.promptVisible);
       if (typeof savedPrompt.systemPrompt === "string" && savedPrompt.systemPrompt) {
@@ -2636,6 +2741,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.start.disabled = false;
       aiIds.stop.disabled = true;
       aiIds.monitorEnabled.disabled = false;
+      prefilterIds.start.disabled = false;
+      prefilterIds.stop.disabled = true;
+      prefilterIds.stats.textContent = "尚未运行预筛选。";
       aiIds.status.dataset.cacheCleared = "1";
       setRuntimeStatus(message);
       aiIds.progress.style.width = "0%";
@@ -3703,7 +3811,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         proofreadMode: aiIds.proofreadMode.value,
         target: aiIds.target.value,
         concurrency: Number(aiIds.concurrency.value),
-        similarityThreshold: parsePercentRatio(aiIds.similarity.value),
+        similarityThreshold: parsePercentRatio(prefilterIds.similarity.value),
         systemPrompt: aiIds.prompt.value,
         labels: pageLabels,
         projectKey: pageMeta.projectKey || "",
@@ -3914,6 +4022,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.start.disabled = Boolean(ai.running);
       aiIds.stop.disabled = !ai.running;
       aiIds.monitorEnabled.disabled = Boolean(ai.running);
+      prefilterIds.start.disabled = Boolean(ai.running);
+      prefilterIds.stop.disabled = !ai.running;
       aiIds.monitorSection.hidden = !Boolean(ai.monitorEnabled);
       const aiTotal = Math.max(0, ai.queued || 0);
       const done = ai.modelProcessed || 0;
@@ -3926,14 +4036,19 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const structuredConflicts = Math.min(rowTotal || Infinity, Math.max(0, ai.structuredConflicts || 0));
       aiIds.progress.style.width = Math.min(100, Math.round((done / total) * 100)) + "%";
       aiIds.progressWrap.hidden = !ai.running && done === 0 && !prefiltered;
+      const isPrefilter = ai.kind === "prefilter";
       const queueText = done + "/" + aiTotal;
       const skipText = "人工确认跳过 " + skippedDone;
       const prefilterText = "规则跳过 " + rulePrefiltered + "，结构化冲突 " + structuredConflicts + "，相似度跳过 " + similarityPrefiltered;
+      const pendingText = "待 AI 校对 " + aiTotal;
+      prefilterIds.stats.textContent = aiRunId
+        ? (ai.running ? "预筛选中：" : (ai.stopRequested ? "预筛选已终止：" : "预筛选完成：")) + prefilterText + "，" + skipText + "，" + pendingText
+        : "尚未运行预筛选。";
       if (!isStatusMessageLocked()) {
         if (ai.running) {
-          setRuntimeStatus("AI 校对中：实际调用 " + queueText + "，" + skipText + "，" + prefilterText + "，建议 " + (ai.suggested || 0) + "，错误 " + (ai.errors || 0));
+          setRuntimeStatus((isPrefilter ? "预筛选中：" : "AI 校对中：实际调用 " + queueText + "，") + (isPrefilter ? "" : skipText + "，") + prefilterText + (isPrefilter ? "，" + pendingText : "，建议 " + (ai.suggested || 0) + "，错误 " + (ai.errors || 0)));
         } else if (ai.finishedAt) {
-          setRuntimeStatus((ai.stopRequested ? "AI 校对已终止：" : "AI 校对完成：") + "实际调用 " + queueText + "，" + skipText + "，" + prefilterText + "，建议 " + (ai.suggested || 0) + "，错误 " + (ai.errors || 0));
+          setRuntimeStatus((isPrefilter ? (ai.stopRequested ? "预筛选已终止：" : "预筛选完成：") : (ai.stopRequested ? "AI 校对已终止：" : "AI 校对完成：") + "实际调用 " + queueText + "，") + (isPrefilter ? "" : skipText + "，") + prefilterText + (isPrefilter ? "，" + pendingText : "，建议 " + (ai.suggested || 0) + "，错误 " + (ai.errors || 0)));
         } else if (ai.error) {
           setRuntimeStatus(ai.error);
         }
@@ -4122,8 +4237,8 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       input.addEventListener("change", saveAiConfig);
     });
     aiIds.proofreadMode.addEventListener("change", updateProofreadModeHint);
-    aiIds.similarity.addEventListener("input", saveAiConfig);
-    aiIds.similarity.addEventListener("change", () => {
+    prefilterIds.similarity.addEventListener("input", saveAiConfig);
+    prefilterIds.similarity.addEventListener("change", () => {
       normalizeSimilarityInput();
       saveAiConfig();
     });
@@ -4138,6 +4253,50 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       saveAiPrompt();
     });
     aiIds.refreshModels.addEventListener("click", refreshAiModels);
+    prefilterIds.start.addEventListener("click", async () => {
+      statusMessageLockedUntil = 0;
+      prefilterIds.start.disabled = true;
+      prefilterIds.panel.open = true;
+      setRuntimeStatus("正在运行预筛选...");
+      try {
+        const response = await fetch("/api/prefilter/start", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            similarityThreshold: parsePercentRatio(prefilterIds.similarity.value),
+            projectKey: pageMeta.projectKey || "",
+            rowsSignature: pageMeta.rowsSignature || "",
+            completedIndexes: [...new Set(Object.entries(notes)
+              .filter(([, item]) => item?.manualDone)
+              .map(([id]) => Number(id))
+              .filter((id) => Number.isInteger(id) && id > 0))],
+            labels: pageLabels,
+          }),
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error);
+        renderAiStatus(data.ai);
+        refreshAiStatus();
+      } catch (error) {
+        setRuntimeStatus(error.message);
+        prefilterIds.start.disabled = false;
+      }
+    });
+    prefilterIds.stop.addEventListener("click", async () => {
+      statusMessageLockedUntil = 0;
+      prefilterIds.stop.disabled = true;
+      setRuntimeStatus("正在终止预筛选...");
+      try {
+        const response = await fetch("/api/prefilter/stop", { method: "POST" });
+        const data = await response.json();
+        if (data.ok) {
+          renderAiStatus(data.ai);
+          refreshAiStatus();
+        }
+      } catch (error) {
+        setRuntimeStatus(error.message);
+      }
+    });
     window.addEventListener("resize", syncVisibleRowLayout);
     window.addEventListener("pagehide", flushNotes);
     document.addEventListener("visibilitychange", () => {

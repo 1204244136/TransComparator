@@ -89,10 +89,26 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(html, /id="aiReasoningField" class="ai-field">/);
   assert.match(html, /<option value="" selected>模型默认<\/option>/);
 
+  // 预筛选独立成模块：阈值迁出 AI 面板，筛选栏与操作栏按功能分离
+  assert.match(html, /id="prefilterPanel"/);
+  assert.match(html, /id="prefilterSimilarity"/);
+  assert.match(html, /id="prefilterStart"/);
+  assert.doesNotMatch(html, /id="aiSimilarity"/);
+  assert.match(html, /class="filter-bar"/);
+  assert.match(html, /class="action-bar"/);
+  assert.match(html, /class="segmented__btn/);
+  assert.doesNotMatch(html, /class="filter-panel"/);
+  assert.doesNotMatch(html, /class="toolbar-actions"/);
+
   const script = html.split("<script>")[1].split("</script>")[0];
   const globalConfigWriter = script.match(/function saveAiConfig\(\)[\s\S]*?function saveAiPrompt/)[0];
   assert.doesNotMatch(globalConfigWriter, /systemPrompt: aiIds\.prompt\.value/);
   assert.match(script, /localStorage\.setItem\(aiPromptStorageKey/);
+  assert.match(script, /\/api\/prefilter\/start/);
+  assert.match(script, /\/api\/prefilter\/stop/);
+  assert.match(script, /similarityThreshold: parsePercentRatio\(prefilterIds\.similarity\.value\)/);
+  assert.match(script, /const prefilterIds = \{/);
+  assert.doesNotMatch(script, /aiIds\.similarity/);
   assert.match(script, /afterRevision/);
   assert.match(script, /knownRequestId/);
   assert.match(script, /aiRequestCache/);
