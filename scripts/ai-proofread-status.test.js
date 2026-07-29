@@ -164,6 +164,80 @@ test("AI queue stops after a fatal authentication response", async () => {
   }
 });
 
+test("AI queue stops after the endpoint returns an HTML page instead of JSON", async () => {
+  clearProofreadCache();
+  const selection = {
+    comparisonMode: "bilingual",
+    inputMode: "txt",
+    files: {
+      jp: path.join(dataDir, "html-source.txt"),
+      cn: path.join(dataDir, "html-translation.txt"),
+      tw: "",
+    },
+    labels: { jp: "原文 A", cn: "非原文 B", tw: "非原文 C" },
+  };
+  const rows = Array.from({ length: 20 }, (_, offset) => ({
+    index: offset + 1,
+    jp: `source paragraph ${offset + 1} with unique content`,
+    cn: `需要模型判断的译文段落 ${offset + 1}`,
+    tw: "",
+    twCn: "",
+    score: 0,
+  }));
+  const project = createProjectContext(selection, rows);
+  const staging = createProjectStaging(selection, { dataDir });
+  fs.writeFileSync(path.join(staging.dir, "translation-compare.json"), JSON.stringify({
+    project,
+    rowsSignature: project.rowsSignature,
+    rows,
+  }), "utf8");
+  for (const name of projectArtifacts) {
+    const file = path.join(staging.dir, name);
+    if (fs.existsSync(file)) continue;
+    fs.writeFileSync(file, name.endsWith(".json") ? "{}" : "", "utf8");
+  }
+  publishProject(staging.dir, { dataDir });
+
+  let requestCount = 0;
+  const server = http.createServer((request, response) => {
+    requestCount += 1;
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end("<!doctype html><title>API home</title>");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const address = server.address();
+    await startProofread({
+      provider: "compatible",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      model: "test-model",
+      proofreadMode: "bilingual",
+      concurrency: 4,
+      projectKey: project.projectKey,
+      rowsSignature: project.rowsSignature,
+    });
+
+    const deadline = Date.now() + 3000;
+    while (clientStatus({ includeResults: false }).running && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const finished = clientStatus();
+    assert.equal(finished.running, false);
+    assert.equal(finished.stopRequested, true);
+    assert.equal(finished.errors, 1);
+    assert.match(finished.error, /配置或响应异常.*非 JSON 响应.*text\/html/);
+    assert.equal(requestCount <= 4, true);
+    assert.equal(finished.processed <= 4, true);
+    assert.match(finished.results.find((result) => result.status === "error").note, /\/v1\/chat\/completions.*非 JSON 响应/);
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+      server.closeAllConnections();
+    });
+  }
+});
+
 test("AI queue trips when the recent error rate reaches the circuit-breaker threshold", async () => {
   clearProofreadCache();
   const selection = {

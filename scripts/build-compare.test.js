@@ -77,6 +77,7 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(html, /目标固定为译文 B，参考原文 A/);
   assert.match(html, /\.ai-config-band\s*\{[^}]*grid-template-columns: 88px minmax\(0, 1fr\);/);
   assert.match(html, /id="aiServiceLabel" class="ai-config-label">AI 服务/);
+  assert.match(html, /<option value="claude">Claude<\/option>/);
   assert.match(html, /id="aiProofreadLabel" class="ai-config-label">校对设置/);
   assert.match(html, /class="ai-runbar"/);
   assert.doesNotMatch(html, /id="aiProofreadModeHint"/);
@@ -86,7 +87,7 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(html, /严重程度/);
   assert.match(html, /issueSeverityFilter/);
   assert.match(html, /id="aiReasoningField" class="ai-field">/);
-  assert.match(html, /<option value="" selected>模型默认（不发送 temperature）<\/option>/);
+  assert.match(html, /<option value="" selected>模型默认<\/option>/);
 
   const script = html.split("<script>")[1].split("</script>")[0];
   const globalConfigWriter = script.match(/function saveAiConfig\(\)[\s\S]*?function saveAiPrompt/)[0];
@@ -113,7 +114,7 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.doesNotMatch(script, /scrollIntoView/);
   assert.match(script, /reasoningEffort: aiIds\.reasoningEffort\.value/);
   assert.match(script, /function updateInferenceSettingOptions\(\)/);
-  assert.match(script, /const nonGptTemperatureOptions = \[\["", "模型默认（不发送 temperature）"\], \.\.\.Array\.from\(\{ length: 11 \}/);
+  assert.match(script, /const nonGptTemperatureOptions = \[\["", "模型默认"\], \.\.\.Array\.from\(\{ length: 11 \}/);
   assert.match(script, /gptReasoningEffort: savedGptReasoningEffort/);
   assert.match(script, /nonGptTemperature: savedNonGptTemperature/);
   assert.match(script, /inferenceSettingVersion: 2/);

@@ -2020,6 +2020,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
                 <label for="aiProvider">接口</label>
                 <select id="aiProvider">
                   <option value="local">本地默认</option>
+                  <option value="claude">Claude</option>
                   <option value="compatible">第三方兼容服务</option>
                 </select>
               </div>
@@ -2039,7 +2040,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
               <div id="aiReasoningField" class="ai-field">
                 <label for="aiReasoningEffort">推理强度</label>
                 <select id="aiReasoningEffort" title="非 GPT 模型默认不发送 temperature">
-                  <option value="" selected>模型默认（不发送 temperature）</option>
+                  <option value="" selected>模型默认</option>
                 </select>
               </div>
               <div class="ai-field">
@@ -2173,7 +2174,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       ["xhigh", "极高 (xhigh)"],
       ["max", "最大 (max)"],
     ];
-    const nonGptTemperatureOptions = [["", "模型默认（不发送 temperature）"], ...Array.from({ length: 11 }, (_, index) => {
+    const nonGptTemperatureOptions = [["", "模型默认"], ...Array.from({ length: 11 }, (_, index) => {
       const value = (index / 10).toFixed(1);
       const percent = index * 10 + "%";
       return [value, percent + "（" + value + "）"];

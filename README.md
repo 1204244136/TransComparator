@@ -247,10 +247,11 @@ $env:TRANSCOMPARATOR_EPUB_CONVERTER = "pandoc"
 
 AI 校对需要通过 `npm run setup` 打开的本地服务访问工作台。直接双击 `translation-compare.html` 只能使用人工备注功能。
 
-工作台顶部的 AI 校对区域支持两类服务：
+工作台顶部的 AI 校对区域支持三类服务：
 
-- `OpenAI-compatible`：适用于 Ollama `/v1`、LM Studio、vLLM、llama.cpp server 等兼容 Chat Completions 的本地服务。
-- `Ollama`：适用于 Ollama 原生 `/api/chat`。
+- `OpenAI-compatible`：适用于 Ollama、LM Studio、vLLM、llama.cpp server 等兼容 Chat Completions 的服务。地址可填写主机、带 `/v1` 的 Base URL，或完整的 `/v1/chat/completions` 地址；程序会识别已有版本段和端点，不会重复拼接。
+- `Claude`：适用于 Claude 原生 Messages API。默认地址是 `https://api.anthropic.com`，也可以填写带 `/v1` 的 Base URL 或完整的 `/v1/messages` 地址；程序会识别已有版本段和端点。认证使用 `x-api-key`，并发送 `anthropic-version: 2023-06-01`。
+- `本地默认`：预置 Ollama 的 OpenAI-compatible `/v1` 地址与模型，可按本机配置修改。
 
 AI 校对范围与当前项目模式绑定。双语项目固定修改译文 B，并以原文 A 为依据；三语项目可以选择 B 或 C 作为修改列，模型同时参考原文 A 和另一份非原文文本。
 
@@ -260,7 +261,7 @@ AI 校对范围与当前项目模式绑定。双语项目固定修改译文 B，
 
 EPUB 注释标记不参与翻译语义判断。无论使用默认还是自定义系统提示词，AI 返回的 `revisedText` 都必须逐字、原位保留目标列中的全部 `noteref` 注释标记，不得修改其属性、内部标签、数量或位置。
 
-默认地址是 `http://127.0.0.1:11434/v1`，默认模型名是 `qwen2.5:14b-instruct`，可以在页面中改成你本机实际运行的模型。API Key 对本地服务通常可以留空。
+本地默认地址是 `http://127.0.0.1:11434/v1`，默认模型名是 `qwen2.5:14b-instruct`，可以在页面中改成你本机实际运行的模型。API Key 对本地服务通常可以留空；Claude 原生接口需要 Claude Console API Key。
 
 启动前选择校对目标列、并发数和“简中-台版相似度预筛选”阈值。调用模型前会依次执行两层预筛：
 
@@ -287,7 +288,7 @@ TransComparator 的实现参考并借助了多个开源项目和开放生态组�
 - [JSZip](https://github.com/Stuk/jszip)、[fast-xml-parser](https://github.com/NaturalIntelligence/fast-xml-parser) 和 [html-to-text](https://github.com/html-to-text/node-html-to-text)：用于内置 EPUB 诊断/fallback 路径中的 ZIP、OPF/nav/XML 和 HTML 文本提取。
 - [Sentence Transformers](https://www.sbert.net/) 与 Hugging Face 上的 `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` 模型：用于跨语言语义向量和原文到非原文文本的段落对齐。
 - [PyTorch](https://pytorch.org/) 与 [NumPy](https://numpy.org/)：用于模型推理、向量计算和 CUDA/ROCm/CPU 后端支持。
-- [Ollama](https://ollama.com/) 以及 OpenAI-compatible Chat Completions 生态：用于可选的本地/兼容接口 AI 辅助校对。
+- [Claude API](https://platform.claude.com/docs/en/api/overview)、[Ollama](https://ollama.com/) 以及 OpenAI-compatible Chat Completions 生态：用于可选的云端、本地或兼容接口 AI 辅助校对。
 - [CC Switch](https://github.com/farion1231/cc-switch)：大模型接口、兼容服务配置和本地模型服务接入思路参考了该项目。
 - [Transformers.js](https://github.com/xenova/transformers.js)：当前仍列在 Node 依赖中，作为本地文本向量化实验和后续浏览器/Node 推理方向的基础组件。
 

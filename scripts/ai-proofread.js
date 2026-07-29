@@ -8,6 +8,13 @@ const toCn = OpenCC.Converter({ from: "tw", to: "cn" });
 const toTw = OpenCC.Converter({ from: "cn", to: "tw" });
 
 const providerDefaults = {
+  claude: {
+    name: "Claude",
+    baseUrl: "https://api.anthropic.com",
+    model: "claude-sonnet-5",
+    apiKeyPlaceholder: "填写 Claude Console API Key",
+    note: "Claude 原生 Messages API；地址可填写主机或带 /v1 的 Base URL。",
+  },
   compatible: {
     name: "第三方兼容服务",
     baseUrl: "",
@@ -461,8 +468,7 @@ async function listModels(input = {}) {
   if (!config.baseUrl) throw new Error("请输入接口地址。");
 
   try {
-    const headers = { "content-type": "application/json" };
-    if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`;
+    const headers = buildProviderHeaders(config);
     const candidates = buildModelUrlCandidates(config.baseUrl);
     const errors = [];
     for (const url of candidates) {
@@ -511,14 +517,43 @@ function normalizeModelList(items, provider) {
 function buildModelUrlCandidates(baseUrl) {
   const trimmed = String(baseUrl || "").trim().replace(/\/+$/, "");
   if (!trimmed) return [];
-  const candidates = [];
-  if (/\/v\d+$/i.test(trimmed)) {
-    candidates.push(`${trimmed}/models`);
-    if (!/\/v1$/i.test(trimmed)) candidates.push(`${trimmed}/v1/models`);
-  } else {
-    candidates.push(`${trimmed}/v1/models`);
+  return [buildApiUrl(trimmed, "/v1/models")];
+}
+
+function buildApiUrl(baseUrl, endpoint) {
+  const base = String(baseUrl || "").trim().replace(/\/+$/, "");
+  const path = `/${String(endpoint || "").trim().replace(/^\/+/, "")}`;
+  if (!base) return path;
+  const endpointSuffix = path.replace(/^\/v\d+(?=\/|$)/i, "");
+  try {
+    const url = new URL(base);
+    const currentPath = url.pathname.replace(/\/+$/, "");
+    const existingEndpoint = currentPath.match(/\/(?:chat\/completions|messages|models)$/i);
+    if (existingEndpoint) {
+      url.pathname = `${currentPath.slice(0, -existingEndpoint[0].length)}${endpointSuffix}`;
+    } else if (/\/v\d+$/i.test(currentPath)) {
+      url.pathname = `${currentPath}${endpointSuffix}`;
+    } else {
+      url.pathname = `${currentPath}${path}`;
+    }
+    return url.toString();
+  } catch {
+    const existingEndpoint = base.match(/\/(?:chat\/completions|messages|models)$/i);
+    if (existingEndpoint) return `${base.slice(0, -existingEndpoint[0].length)}${endpointSuffix}`;
+    if (/\/v\d+$/i.test(base)) return `${base}${endpointSuffix}`;
+    return `${base}${path}`;
   }
-  return [...new Set(candidates)];
+}
+
+function buildProviderHeaders(config = {}) {
+  const headers = { "content-type": "application/json" };
+  if (config.provider === "claude") {
+    headers["anthropic-version"] = "2023-06-01";
+    if (config.apiKey) headers["x-api-key"] = config.apiKey;
+  } else if (config.apiKey) {
+    headers.authorization = `Bearer ${config.apiKey}`;
+  }
+  return headers;
 }
 
 function modelFallbackForBaseUrl(baseUrl) {
@@ -621,12 +656,13 @@ function finish() {
 }
 
 function isFatalRequestError(error) {
-  return error?.httpStatus === 401 || error?.httpStatus === 403;
+  return error?.code === "INVALID_JSON_RESPONSE"
+    || [400, 401, 403, 404, 405, 415, 422].includes(error?.httpStatus);
 }
 
 function stopForFatalRequestError(error) {
   status.stopRequested = true;
-  status.error = `AI 接口拒绝访问，任务已自动终止：${error.message || String(error)}`;
+  status.error = `AI 接口配置或响应异常，任务已自动终止：${error.message || String(error)}`;
   pushLog(status.error);
   for (const controller of controllers) controller.abort();
 }
@@ -913,19 +949,56 @@ function buildMessages(payload, config = {}) {
 }
 
 async function callModel(messages, config) {
+  if (config.provider === "claude") return callClaude(messages, config);
   return callOpenAiCompatible(messages, config);
 }
 
 async function callOpenAiCompatible(messages, config) {
-  const headers = { "content-type": "application/json" };
-  if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`;
+  const headers = buildProviderHeaders(config);
   const body = buildChatCompletionBody(messages, config);
-  const data = await fetchJson(`${config.baseUrl}/chat/completions`, {
+  const data = await fetchJson(buildApiUrl(config.baseUrl, "/v1/chat/completions"), {
     method: "POST",
     headers,
     body: JSON.stringify(body),
   });
   return data.choices?.[0]?.message?.content || "";
+}
+
+async function callClaude(messages, config) {
+  const data = await fetchJson(buildApiUrl(config.baseUrl, "/v1/messages"), {
+    method: "POST",
+    headers: buildProviderHeaders(config),
+    body: JSON.stringify(buildClaudeMessageBody(messages, config)),
+  });
+  return extractClaudeText(data);
+}
+
+function buildClaudeMessageBody(messages, config = {}) {
+  const system = messages
+    .filter((message) => message.role === "system")
+    .map((message) => String(message.content || ""))
+    .filter(Boolean)
+    .join("\n\n");
+  const body = {
+    model: config.model,
+    max_tokens: 4096,
+    messages: messages
+      .filter((message) => message.role !== "system")
+      .map((message) => ({ role: message.role, content: message.content })),
+  };
+  if (system) body.system = system;
+  const temperature = normalizeNonGptTemperature(config.reasoningEffort);
+  if (temperature != null) body.temperature = temperature;
+  return body;
+}
+
+function extractClaudeText(data = {}) {
+  if (typeof data.content === "string") return data.content;
+  if (!Array.isArray(data.content)) return "";
+  return data.content
+    .filter((block) => block?.type === "text" && typeof block.text === "string")
+    .map((block) => block.text)
+    .join("");
 }
 
 function buildChatCompletionBody(messages, config = {}) {
@@ -958,12 +1031,22 @@ async function fetchJson(url, options, fetchOptions = {}) {
     const response = await fetch(url, { ...options, signal: controller.signal });
     const text = await response.text();
     if (!response.ok) {
-      const error = new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`);
+      const error = new Error(`${displayRequestUrl(url)} 返回 HTTP ${response.status}: ${text.slice(0, 500)}`);
       error.code = "HTTP_ERROR";
       error.httpStatus = response.status;
       throw error;
     }
-    return text ? JSON.parse(text) : {};
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch (cause) {
+      const contentType = response.headers.get("content-type") || "未知类型";
+      const preview = text.replace(/\s+/g, " ").trim().slice(0, 160);
+      const error = new Error(`${displayRequestUrl(url)} 返回了非 JSON 响应（${contentType}）：${preview || "空响应"}`);
+      error.code = "INVALID_JSON_RESPONSE";
+      error.cause = cause;
+      throw error;
+    }
   } catch (error) {
     if (timedOut && error?.name === "AbortError") {
       const timeoutError = new Error(`请求超时（${Math.ceil(timeoutMs / 1000)} 秒）`);
@@ -1046,6 +1129,19 @@ function parseNeedsEdit(value, semanticSame, better) {
   if (better === "counterpart" || better === "neither") return true;
   if (semanticSame || better === "target") return false;
   return false;
+}
+
+function displayRequestUrl(value) {
+  try {
+    const url = new URL(String(value));
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return String(value || "").split(/[?#]/, 1)[0];
+  }
 }
 
 function normalizeSeverity(value, needsEdit = true) {
@@ -1167,11 +1263,16 @@ function analysisLine(decision, fallback = "") {
 }
 
 module.exports = {
+  buildApiUrl,
   buildChatCompletionBody,
+  buildClaudeMessageBody,
   buildMessages,
+  buildProviderHeaders,
+  callModel,
   clearProofreadCache,
   clientStatus,
   decisionToResult,
+  extractClaudeText,
   listModels,
   isGptModel,
   normalizeNonGptTemperature,
