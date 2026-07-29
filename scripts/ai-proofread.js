@@ -68,6 +68,15 @@ function normalizeReasoningEffort(value, model) {
   return isGptModel(model) && reasoningEfforts.has(effort) ? effort : "";
 }
 
+function normalizeNonGptTemperature(value) {
+  if (value == null || String(value).trim() === "") return null;
+  const temperature = Number(value);
+  if (!Number.isFinite(temperature) || temperature < 0 || temperature > 1) {
+    return null;
+  }
+  return Math.round(temperature * 10) / 10;
+}
+
 const proofreadPrompts = {
   bilingual: {
     system: [
@@ -267,7 +276,9 @@ function cleanConfig(input = {}) {
     rowsSignature: String(input.rowsSignature || "").trim(),
     baseUrl: String(input.baseUrl || defaults.baseUrl).trim().replace(/\/+$/, ""),
     model,
-    reasoningEffort: normalizeReasoningEffort(input.reasoningEffort, model),
+    reasoningEffort: isGptModel(model)
+      ? normalizeReasoningEffort(input.reasoningEffort, model)
+      : normalizeNonGptTemperature(input.reasoningEffort),
     apiKey: String(input.apiKey || "").trim(),
     systemPrompt: String(input.systemPrompt || "").trim() || proofreadPromptFor(proofreadMode).system,
     completedIndexes: normalizeIndexSet(input.completedIndexes),
@@ -923,9 +934,13 @@ function buildChatCompletionBody(messages, config = {}) {
     messages,
     stream: false,
   };
-  const reasoningEffort = normalizeReasoningEffort(config.reasoningEffort, config.model);
-  if (reasoningEffort) body.reasoning_effort = reasoningEffort;
-  if (!isGptModel(config.model)) body.temperature = 0.1;
+  if (isGptModel(config.model)) {
+    const reasoningEffort = normalizeReasoningEffort(config.reasoningEffort, config.model);
+    if (reasoningEffort) body.reasoning_effort = reasoningEffort;
+  } else {
+    const temperature = normalizeNonGptTemperature(config.reasoningEffort);
+    if (temperature != null) body.temperature = temperature;
+  }
   return body;
 }
 
@@ -1159,6 +1174,7 @@ module.exports = {
   decisionToResult,
   listModels,
   isGptModel,
+  normalizeNonGptTemperature,
   normalizeReasoningEffort,
   normalizeSeverity,
   parseDecision,

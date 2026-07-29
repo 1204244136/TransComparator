@@ -2015,7 +2015,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         <div id="aiConfigSection" class="ai-config-stack">
           <section class="ai-config-band ai-service-band" aria-labelledby="aiServiceLabel">
             <div id="aiServiceLabel" class="ai-config-label">AI 服务</div>
-            <div id="aiServiceFields" class="ai-service-fields">
+            <div id="aiServiceFields" class="ai-service-fields has-reasoning">
               <div class="ai-field">
                 <label for="aiProvider">接口</label>
                 <select id="aiProvider">
@@ -2036,17 +2036,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
                   <button id="aiRefreshModels" type="button">刷新</button>
                 </div>
               </div>
-              <div id="aiReasoningField" class="ai-field" hidden>
+              <div id="aiReasoningField" class="ai-field">
                 <label for="aiReasoningEffort">推理强度</label>
-                <select id="aiReasoningEffort" title="不同 GPT 模型支持的推理强度可能不同">
-                  <option value="">模型默认</option>
-                  <option value="none">无 (none)</option>
-                  <option value="minimal">最小 (minimal)</option>
-                  <option value="low">低 (low)</option>
-                  <option value="medium">中 (medium)</option>
-                  <option value="high">高 (high)</option>
-                  <option value="xhigh">极高 (xhigh)</option>
-                  <option value="max">最大 (max)</option>
+                <select id="aiReasoningEffort" title="非 GPT 模型默认不发送 temperature">
+                  <option value="" selected>模型默认（不发送 temperature）</option>
                 </select>
               </div>
               <div class="ai-field">
@@ -2170,6 +2163,23 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const bilingualMode = pageMeta.comparisonMode === "bilingual";
     const aiConfigStorageKey = "translation-compare-ai-config-v1";
     const aiPromptStorageKey = "translation-compare-ai-prompt-v1:" + (pageMeta.projectKey || "unscoped");
+    const gptReasoningOptions = [
+      ["", "模型默认"],
+      ["none", "无 (none)"],
+      ["minimal", "最小 (minimal)"],
+      ["low", "低 (low)"],
+      ["medium", "中 (medium)"],
+      ["high", "高 (high)"],
+      ["xhigh", "极高 (xhigh)"],
+      ["max", "最大 (max)"],
+    ];
+    const nonGptTemperatureOptions = [["", "模型默认（不发送 temperature）"], ...Array.from({ length: 11 }, (_, index) => {
+      const value = (index / 10).toFixed(1);
+      const percent = index * 10 + "%";
+      return [value, percent + "（" + value + "）"];
+    })];
+    let savedGptReasoningEffort = "";
+    let savedNonGptTemperature = "";
     const automatedNoteMarkers = ["[AI校对]", "[规则预筛]", "[相似度预筛]"];
     const allRows = JSON.parse(document.getElementById("rowData").textContent);
     const rowsById = new Map(allRows.map((row) => [String(row.index), row]));
@@ -2445,11 +2455,35 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       return /(?:^|\\/)gpt(?:-|$)/i.test(String(model || "").trim());
     }
 
-    function updateReasoningEffortVisibility() {
-      const visible = isGptModelName(aiIds.model.value);
-      aiIds.reasoningField.hidden = !visible;
-      aiIds.reasoningEffort.disabled = !visible;
-      aiIds.serviceFields.classList.toggle("has-reasoning", visible);
+    function rememberInferenceSetting() {
+      const value = aiIds.reasoningEffort.value;
+      if (aiIds.reasoningEffort.dataset.mode === "gpt") {
+        if (gptReasoningOptions.some(([optionValue]) => optionValue === value)) savedGptReasoningEffort = value;
+      } else if (aiIds.reasoningEffort.dataset.mode === "temperature") {
+        if (nonGptTemperatureOptions.some(([optionValue]) => optionValue === value)) savedNonGptTemperature = value;
+      }
+    }
+
+    function updateInferenceSettingOptions() {
+      const mode = isGptModelName(aiIds.model.value) ? "gpt" : "temperature";
+      if (aiIds.reasoningEffort.dataset.mode !== mode) {
+        rememberInferenceSetting();
+        const options = mode === "gpt" ? gptReasoningOptions : nonGptTemperatureOptions;
+        aiIds.reasoningEffort.replaceChildren(...options.map(([value, label]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          return option;
+        }));
+        aiIds.reasoningEffort.dataset.mode = mode;
+      }
+      aiIds.reasoningEffort.value = mode === "gpt" ? savedGptReasoningEffort : savedNonGptTemperature;
+      aiIds.reasoningEffort.title = mode === "gpt"
+        ? "GPT 模型通过 reasoning_effort 调整；不同模型支持的档位可能不同"
+        : "非 GPT 模型通过 temperature 调整；选择模型默认时不发送该参数";
+      aiIds.reasoningField.hidden = false;
+      aiIds.reasoningEffort.disabled = false;
+      aiIds.serviceFields.classList.add("has-reasoning");
       syncEnhancedSelect(aiIds.reasoningEffort);
     }
 
@@ -2462,11 +2496,15 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     }
 
     function saveAiConfig() {
+      rememberInferenceSetting();
       const config = {
         provider: aiIds.provider.value,
         baseUrl: aiIds.baseUrl.value,
         model: aiIds.model.value,
         reasoningEffort: aiIds.reasoningEffort.value,
+        inferenceSettingVersion: 2,
+        gptReasoningEffort: savedGptReasoningEffort,
+        nonGptTemperature: savedNonGptTemperature,
         modelOptions: aiModelOptions,
         modelOptionsBaseUrl: aiModelOptions.length ? normalizeApiBaseUrl(aiIds.baseUrl.value) : "",
         apiKey: aiIds.apiKey.value,
@@ -2505,8 +2543,14 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         aiIds.model.dataset.touched = "1";
       }
       if (typeof saved.apiKey === "string") aiIds.apiKey.value = saved.apiKey;
-      if (["", "none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(saved.reasoningEffort)) {
-        aiIds.reasoningEffort.value = saved.reasoningEffort;
+      const validGptValues = gptReasoningOptions.map(([value]) => value);
+      const validTemperatureValues = nonGptTemperatureOptions.map(([value]) => value);
+      if (validGptValues.includes(saved.gptReasoningEffort)) savedGptReasoningEffort = saved.gptReasoningEffort;
+      if (saved.inferenceSettingVersion === 2 && validTemperatureValues.includes(String(saved.nonGptTemperature))) {
+        savedNonGptTemperature = String(saved.nonGptTemperature);
+      }
+      if (isGptModelName(aiIds.model.value) && validGptValues.includes(saved.reasoningEffort)) {
+        savedGptReasoningEffort = saved.reasoningEffort;
       }
       if (saved.target === "cn" || saved.target === "tw") aiIds.target.value = saved.target;
       if (bilingualMode) aiIds.target.value = "cn";
@@ -2527,7 +2571,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       aiIds.promptSection.hidden = !aiIds.promptVisible.checked;
       normalizeSimilarityInput();
       updateProofreadModeHint();
-      updateReasoningEffortVisibility();
+      updateInferenceSettingOptions();
     }
 
     function bindDetailsToggle(scope = document) {
@@ -3820,7 +3864,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
             '<span>第 ' + escapeHtml(request.rowIndex) + ' 行</span>' +
             '<span>' + escapeHtml(request.stageLabel || request.stage || "") + '</span>' +
             '<span>' + escapeHtml(request.model || "") + '</span>' +
-            (request.reasoningEffort ? '<span>推理 ' + escapeHtml(request.reasoningEffort) + '</span>' : '') +
+            (request.reasoningEffort !== "" && request.reasoningEffort != null
+              ? '<span>' + (isGptModelName(request.model) ? '推理 ' : '温度 ') + escapeHtml(request.reasoningEffort) + '</span>'
+              : '') +
           '</div>' +
           '<div class="ai-request-time">' + elapsed + '</div>' +
           '<button class="details-toggle" type="button" data-details-toggle aria-label="折叠或展开第 ' + escapeHtml(request.rowIndex) + ' 行请求详情"></button>' +
@@ -3973,7 +4019,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }));
       aiIds.model.value = resolved.selected;
       syncEnhancedSelect(aiIds.model);
-      updateReasoningEffortVisibility();
+      updateInferenceSettingOptions();
     }
 
     async function refreshAiModels() {
@@ -4055,7 +4101,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     });
     aiIds.model.addEventListener("input", () => {
       aiIds.model.dataset.touched = "1";
-      updateReasoningEffortVisibility();
+      updateInferenceSettingOptions();
       saveAiConfig();
     });
     aiIds.model.addEventListener("change", () => {
@@ -4067,7 +4113,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           aiIds.model.value = value.trim();
         }
       }
-      updateReasoningEffortVisibility();
+      updateInferenceSettingOptions();
       saveAiConfig();
     });
     [aiIds.apiKey, aiIds.target, aiIds.concurrency, aiIds.proofreadMode, aiIds.reasoningEffort].forEach((input) => {

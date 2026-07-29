@@ -6,6 +6,7 @@ const {
   buildMessages,
   decisionToResult,
   isGptModel,
+  normalizeNonGptTemperature,
   normalizeReasoningEffort,
   parseDecision,
   proofreadPromptFor,
@@ -81,19 +82,33 @@ test("GPT Chat Completions requests include the selected reasoning effort", () =
   assert.equal(normalizeReasoningEffort(" XHIGH ", "openai/gpt-5.6-terra"), "xhigh");
 });
 
-test("non-GPT requests ignore reasoning effort and keep their sampling temperature", () => {
+test("non-GPT requests use the selected inference value as sampling temperature", () => {
   const body = buildChatCompletionBody([], {
     model: "qwen2.5:14b-instruct",
-    reasoningEffort: "high",
+    reasoningEffort: "0.8",
   });
 
   assert.deepEqual(body, {
     model: "qwen2.5:14b-instruct",
     messages: [],
     stream: false,
-    temperature: 0.1,
+    temperature: 0.8,
   });
   assert.equal(normalizeReasoningEffort("unsupported", "gpt-5.6"), "");
+});
+
+test("non-GPT temperature accepts values from 0.0 to 1.0", () => {
+  assert.equal(normalizeNonGptTemperature("0"), 0);
+  assert.equal(normalizeNonGptTemperature("0.74"), 0.7);
+  assert.equal(normalizeNonGptTemperature("1.1"), null);
+});
+
+test("non-GPT requests omit temperature by default", () => {
+  const missing = buildChatCompletionBody([], { model: "qwen" });
+  const selected = buildChatCompletionBody([], { model: "qwen", reasoningEffort: "" });
+  assert.equal(Object.hasOwn(missing, "temperature"), false);
+  assert.equal(Object.hasOwn(selected, "temperature"), false);
+  assert.equal(normalizeNonGptTemperature(""), null);
 });
 
 test("AI decisions normalize MQM-style severity only for definite edits", () => {
