@@ -107,7 +107,10 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(script, /function focusAdjacentRevision\(direction, currentCheckbox = null\)[\s\S]*?targets\[targetIndex \+ direction\]/);
   assert.match(script, /input:not\(\[type="checkbox"\]\), textarea, select/);
   assert.match(script, /event\.key === "ArrowDown" \? 1 : -1/);
-  assert.match(script, /scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/);
+  assert.match(script, /preferredTop = Math\.max\(headerHeight \+ 16, Math\.round\(tableFrame\.clientHeight \* 0\.18\)\)/);
+  assert.match(script, /keyboardScrollSpacer\.style\.height = Math\.max\(0, tableFrame\.clientHeight - preferredTop\) \+ "px"/);
+  assert.match(script, /tableFrame\.scrollTop = Math\.max\(0, Math\.min\(rowTop - preferredTop, maxScrollTop\)\)/);
+  assert.doesNotMatch(script, /scrollIntoView/);
   assert.match(script, /reasoningEffort: aiIds\.reasoningEffort\.value/);
   assert.match(script, /function updateReasoningEffortVisibility\(\)/);
   assert.doesNotMatch(html, /backdrop-filter/);

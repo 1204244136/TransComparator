@@ -1504,6 +1504,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       overflow: visible;
       max-height: none;
     }
+    .keyboard-scroll-spacer {
+      height: 0;
+      pointer-events: none;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -2127,6 +2131,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           <tbody>
           </tbody>
         </table>
+        <div id="keyboardScrollSpacer" class="keyboard-scroll-spacer" aria-hidden="true"></div>
       </div>
       <div id="paginationBar" class="pagination-bar">
         <div id="paginationStatus">正在准备行数据...</div>
@@ -2177,6 +2182,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     const tbody = document.querySelector("tbody");
     const wrap = document.querySelector(".wrap");
     const tableFrame = document.querySelector(".table-frame");
+    const keyboardScrollSpacer = document.getElementById("keyboardScrollSpacer");
     const query = document.getElementById("query");
     const severityButtons = Array.from(document.querySelectorAll("[data-severity]"));
     const aiResultButtons = Array.from(document.querySelectorAll("[data-ai-result]"));
@@ -3109,6 +3115,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
 
     function renderVisibleRows({ reset = false } = {}) {
       if (reset) currentPage = 1;
+      keyboardScrollSpacer.style.height = "0px";
       const size = Number(pageSize.value || 100);
       const total = totalPages();
       currentPage = Math.max(1, Math.min(currentPage, total));
@@ -3422,7 +3429,16 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       activeRowId = row?.dataset.index || "";
       if (row) row.classList.add("active-row");
       checkbox.focus({ preventScroll: true });
-      checkbox.scrollIntoView({ block: "nearest", inline: "nearest" });
+      if (row && !tableFrame.classList.contains("is-fit-content")) {
+        const frameRect = tableFrame.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const headerHeight = tableFrame.querySelector("thead")?.getBoundingClientRect().height || 0;
+        const preferredTop = Math.max(headerHeight + 16, Math.round(tableFrame.clientHeight * 0.18));
+        keyboardScrollSpacer.style.height = Math.max(0, tableFrame.clientHeight - preferredTop) + "px";
+        const rowTop = tableFrame.scrollTop + rowRect.top - frameRect.top;
+        const maxScrollTop = Math.max(0, tableFrame.scrollHeight - tableFrame.clientHeight);
+        tableFrame.scrollTop = Math.max(0, Math.min(rowTop - preferredTop, maxScrollTop));
+      }
       return true;
     }
 

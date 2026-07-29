@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
+const { projectSignature } = require("./project-context");
 const {
   activateProject,
   createProjectStaging,
@@ -13,6 +14,16 @@ const {
   publishProject,
   resolveProjectArtifact,
 } = require("./project-store");
+
+test("explicitly disabled noteref keeps the legacy project identity", () => {
+  const base = selection("C:\\books", "legacy");
+  const legacy = { ...base, inlineMarkup: { ruby: true, bold: true } };
+  const disabled = { ...base, inlineMarkup: { ruby: true, bold: true, noteref: false } };
+  const enabled = { ...base, inlineMarkup: { ruby: true, bold: true, noteref: true } };
+
+  assert.equal(projectSignature(disabled), projectSignature(legacy));
+  assert.notEqual(projectSignature(enabled), projectSignature(legacy));
+});
 
 function selection(dataDir, sourceName) {
   return {

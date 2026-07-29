@@ -34,11 +34,13 @@ function normalizeFiles(files = {}) {
 
 function projectSignature(selection = {}) {
   const files = normalizeFiles(selection.files);
+  const inlineMarkup = { ...(selection.inlineMarkup || {}) };
+  if (inlineMarkup.noteref === false) delete inlineMarkup.noteref;
   const identity = [
     ...langs.map((lang) => files[lang]),
     selection.inputMode || "",
     JSON.stringify(selection.startMarkers || {}),
-    JSON.stringify(selection.inlineMarkup || {}),
+    JSON.stringify(inlineMarkup),
   ];
   if (selection.comparisonMode === "bilingual") identity.splice(3, 0, "bilingual");
   return shortHash(identity.join("\u001f"));
