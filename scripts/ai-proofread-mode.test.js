@@ -337,6 +337,8 @@ test("AI result notes include severity only for definite edits", () => {
     revisedText: "",
   }));
 
-  assert.match(decisionToResult({ index: 1 }, edited, "译文", "对照译文").note, /严重程度：致命/);
-  assert.doesNotMatch(decisionToResult({ index: 2 }, unchanged, "译文", "对照译文").note, /严重程度：/);
+  const editedResult = decisionToResult({ index: 1 }, edited, "译文", "对照译文", "tw");
+  assert.equal(editedResult.targetKey, "tw");
+  assert.match(editedResult.note, /严重程度：致命/);
+  assert.doesNotMatch(decisionToResult({ index: 2 }, unchanged, "译文", "对照译文", "cn").note, /严重程度：/);
 });

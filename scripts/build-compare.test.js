@@ -125,6 +125,11 @@ test("bilingual workbench fixes AI target to B and omits C", () => {
   assert.match(script, /aiStatusRefreshInFlight/);
   assert.match(script, /pendingResults\.length[\s\S]*?saveNotes\(\)[\s\S]*?updateDoneCount\(\)/);
   assert.match(script, /function writeNote\([^)]*\{ deferCommit = false \}/);
+  assert.match(script, /function revisionTextFor\(item\)/);
+  assert.match(script, /current\.revisionText = revisionEditor\.value/);
+  assert.match(script, /const targetKey = revisionTargetFor\(item\)/);
+  assert.match(script, /data-revision=/);
+  assert.match(script, /writeNote\(String\(result\.index\), result\.note \|\| "", Boolean\(result\.done\), \{ deferCommit: true \}, result\.targetKey \|\| ""\)/);
   assert.match(script, /resultLimit: "64"/);
   assert.match(script, /requestIdleCallback\(commit, \{ timeout: 2000 \}\)/);
   assert.match(script, /window\.addEventListener\("pagehide", flushNotes\)/);

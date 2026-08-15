@@ -1917,6 +1917,21 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       font-size: 12px;
       line-height: 1.2;
     }
+    .revision-editor {
+      min-height: 76px;
+      max-height: 40vh;
+      margin-top: 5px;
+      overflow-y: hidden;
+      background: var(--surface);
+    }
+    .revision-editor.is-overflowing {
+      overflow-y: auto;
+    }
+    .revision-editor:focus-visible {
+      border-color: var(--focus);
+      outline: 2px solid color-mix(in srgb, var(--focus) 24%, transparent);
+      outline-offset: 1px;
+    }
     textarea {
       display: block;
       width: 100%;
@@ -2509,8 +2524,27 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const manualDone = Boolean(value?.manualDone);
       const item = splitStoredNote(note, manualNote, false, manualDone);
       item.aiDone = Boolean(value?.aiDone || hasAutomatedDecisionNote(item.note));
+      const parsedRevision = parseAutomatedNote(item.note)?.revision || "";
+      item.revisionText = Object.prototype.hasOwnProperty.call(value || {}, "revisionText")
+        ? String(value.revisionText || "")
+        : parsedRevision;
+      item.revisionTarget = normalizeRevisionTarget(value?.revisionTarget);
       cleanAiFailureState(item);
       return item;
+    }
+
+    function normalizeRevisionTarget(value) {
+      return value === "tw" || value === "cn" ? value : "";
+    }
+
+    function revisionTextFor(item) {
+      if (!item) return "";
+      if (Object.prototype.hasOwnProperty.call(item, "revisionText")) return String(item.revisionText || "");
+      return parseAutomatedNote(item.note || "")?.revision || "";
+    }
+
+    function revisionTargetFor(item) {
+      return normalizeRevisionTarget(item?.revisionTarget) || "cn";
     }
 
     function splitStoredNote(note, manualNote, done, manualDone = false, aiDone = false) {
@@ -2941,11 +2975,13 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       return html;
     }
 
-    function renderDiffBlock(row, noteText) {
+    function renderDiffBlock(row, item) {
       const twDiffHtml = renderRowDiffHtml(row);
-      const revision = parseAutomatedNote(noteText)?.revision || "";
-      const revisionDiffHtml = row.cn && revision ? inlineDiffHtml(row.cn, revision) : "";
-      const revisionMatchesTw = Boolean(twDiffHtml && revisionDiffHtml && twDiffHtml === revisionDiffHtml);
+      const revision = revisionTextFor(item);
+      const targetKey = revisionTargetFor(item);
+      const targetText = targetKey === "tw" ? row.tw : row.cn;
+      const revisionDiffHtml = targetText && revision ? inlineDiffHtml(targetText, revision) : "";
+      const revisionMatchesTw = targetKey === "cn" && Boolean(twDiffHtml && revisionDiffHtml && twDiffHtml === revisionDiffHtml);
       const comparisons = [];
       if (twDiffHtml && !revisionMatchesTw) {
         comparisons.push({
@@ -2957,15 +2993,14 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         });
       }
       if (revisionDiffHtml) {
-        const id = String(row.index);
         const matchBadge = revisionMatchesTw
           ? '<span class="diff-match-badge" title="与' + escapeHtml(pageLabels.tw) + '简体化的差异完全相同">同' + escapeHtml(pageLabels.tw) + '简体化</span>'
           : "";
         comparisons.push({
           kind: "revision",
           html: '<div class="diff-comparison" data-diff-kind="revision">' +
-          '<div class="version-label"><label class="revision-select"><span>' + escapeHtml(pageLabels.cn) + ' -> 修改结果</span><input type="checkbox" data-export-revision="' + escapeHtml(id) + '" aria-label="选择第 ' + escapeHtml(id) + ' 行修改结果"' + (selectedRevisionIds.has(id) ? " checked" : "") + '></label>' + matchBadge + '</div>' +
-          '<div lang="zh-Hans">' + revisionDiffHtml + '</div>' +
+          '<div class="version-label"><span>' + escapeHtml(pageLabels[targetKey] || targetKey) + ' -> 修改结果</span>' + matchBadge + '</div>' +
+          '<div lang="' + (targetKey === "tw" ? "zh-Hant" : "zh-Hans") + '">' + revisionDiffHtml + '</div>' +
           '</div>',
         });
       }
@@ -3105,14 +3140,18 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       return { critical: "致命", major: "严重", minor: "轻微" }[severity] || "";
     }
 
-    function renderNoteSummary(noteText) {
+    function renderNoteSummary(item, id) {
+      const noteText = item?.note || "";
       const note = parseAutomatedNote(noteText);
       if (!note) return '<div class="note-summary" hidden></div>';
       const analysis = note.analysis
         ? '<div class="note-detail note-reason"><div class="note-detail-head"><span class="note-summary-key">分析</span></div><div class="note-summary-value">' + escapeHtml(note.analysis) + '</div></div>'
         : "";
-      const revision = note.revision
-        ? '<div class="note-detail note-revision"><div class="note-detail-head"><span class="note-summary-key">修改结果</span><button type="button" class="copy-revision" data-copy-text="' + escapeHtml(note.revision) + '" title="复制修改结果">复制</button></div><div class="note-summary-value">' + escapeHtml(note.revision) + '</div></div>'
+      const revisionText = revisionTextFor(item);
+      const revisionTarget = revisionTargetFor(item);
+      const revisionLabel = pageLabels[revisionTarget] || (revisionTarget === "tw" ? "非原文 C" : "非原文 B");
+      const revision = revisionText
+        ? '<div class="note-detail note-revision"><div class="note-detail-head"><label class="revision-select"><input type="checkbox" data-export-revision="' + escapeHtml(id || "") + '" aria-label="选择第 ' + escapeHtml(id || "") + ' 行修改结果"' + (selectedRevisionIds.has(String(id)) ? " checked" : "") + '><span class="note-summary-key">' + escapeHtml(revisionLabel) + '修改结果</span></label><button type="button" class="copy-revision" data-copy-text="' + escapeHtml(revisionText) + '" title="复制修改结果">复制</button></div><textarea class="revision-editor" data-revision="' + escapeHtml(id || "") + '" aria-label="第 ' + escapeHtml(id || "") + ' 行 AI 修改结果">' + escapeHtml(revisionText) + '</textarea></div>'
         : "";
       const severity = note.severity
         ? '<div class="note-summary-line"><span class="note-summary-key">严重程度</span><span class="issue-severity-badge is-' + note.severity + '">' + issueSeverityLabel(note.severity) + '</span></div>'
@@ -3152,6 +3191,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         row.cn,
         row.tw,
         row.twCn,
+        revisionTextFor(notes[row.index]),
         note,
       ].join(" ").toLowerCase();
     }
@@ -3169,7 +3209,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         .join(" ");
       const cnCopyButton = '<button type="button" class="copy-version" data-copy-text="' + escapeHtml(row.cn || "") + '" title="复制' + escapeHtml(pageLabels.cn) + '">复制</button>';
       const twCopyButton = '<button type="button" class="copy-version" data-copy-text="' + escapeHtml(row.tw || "") + '" title="复制' + escapeHtml(pageLabels.tw) + '">复制</button>';
-      const diffBlock = bilingualMode ? "" : renderDiffBlock(row, note.note || "");
+      const diffBlock = renderDiffBlock(row, note);
       const twPanel = bilingualMode ? "" : '<section class="version-panel"><div class="version-label"><span>' + escapeHtml(pageLabels.tw) + '</span>' + twCopyButton + '</div><div lang="zh-Hant">' + escapeHtml(row.tw) + '</div></section>';
       const twChars = bilingualMode ? "" : ' / ' + escapeHtml(pageLabels.tw) + ' ' + (row.twChars || 0);
       const semanticLine = !bilingualMode && row.jpAlignScoreText
@@ -3203,7 +3243,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         '</div>',
         aiBadge,
         '</div>',
-        renderNoteSummary(note.note || ""),
+        renderNoteSummary(note, id),
         '<textarea class="note-editor" data-note="' + id + '" aria-label="第 ' + id + ' 行人工备注"' + (manualNoteOpen ? "" : " hidden") + '>' + escapeHtml(manualNoteText) + '</textarea>',
         '</td>',
         '</tr>',
@@ -3226,8 +3266,19 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       editor.classList.toggle("is-overflowing", editor.scrollHeight > maxHeight);
     }
 
+    function syncRevisionEditorHeight(editor) {
+      if (!editor) return;
+      editor.classList.remove("is-overflowing");
+      editor.style.height = "auto";
+      const maxHeight = Math.max(120, Math.round(window.innerHeight * 0.4));
+      const nextHeight = Math.min(editor.scrollHeight + 2, maxHeight);
+      editor.style.height = nextHeight + "px";
+      editor.classList.toggle("is-overflowing", editor.scrollHeight > maxHeight);
+    }
+
     function syncVisibleRowLayout() {
       for (const editor of tbody.querySelectorAll(".note-editor")) syncNoteEditorHeight(editor);
+      for (const editor of tbody.querySelectorAll(".revision-editor")) syncRevisionEditorHeight(editor);
 
       const visibleRows = tbody.querySelectorAll("tr[data-index]").length;
       const fitContent = visibleRows <= 3;
@@ -3305,8 +3356,9 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
     }
 
-    function writeNote(id, note, aiDone, { deferCommit = false } = {}) {
+    function writeNote(id, note, aiDone, { deferCommit = false } = {}, revisionTarget = "") {
       const current = notes[id] || { note: "", done: false };
+      const previousNote = current.note || "";
       current.aiDone = Boolean(aiDone || current.aiDone || hasAutomatedDecisionNote(note));
       current.done = Boolean(current.manualDone);
       if (!current.note || isAutomatedNoteText(current.note)) {
@@ -3316,6 +3368,18 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         current.note = note;
       } else if (note && !current.note.includes(note)) {
         current.note = current.note + "\\n\\n" + note;
+      }
+      const parsedRevision = parseAutomatedNote(current.note)?.revision || "";
+      if (parsedRevision) {
+        const sameAutomatedNote = isAutomatedNoteText(note) && note === previousNote;
+        if (!sameAutomatedNote || !Object.prototype.hasOwnProperty.call(current, "revisionText")) {
+          current.revisionText = parsedRevision;
+        }
+        current.revisionTarget = normalizeRevisionTarget(revisionTarget) || current.revisionTarget || "cn";
+      } else if (isAutomatedNoteText(note)) {
+        current.revisionText = "";
+        current.revisionTarget = "";
+        selectedRevisionIds.delete(String(id));
       }
       cleanAiFailureState(current);
       notes[id] = current;
@@ -3328,7 +3392,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         const summary = textarea.closest(".note-cell")?.querySelector(".note-summary");
         if (summary) {
           const wrapper = document.createElement("div");
-          wrapper.innerHTML = renderNoteSummary(notes[id]?.note || "");
+          wrapper.innerHTML = renderNoteSummary(notes[id], id);
           summary.replaceWith(wrapper.firstElementChild);
         }
       }
@@ -3345,7 +3409,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       }
       const diffSlot = rendered?.querySelector('[data-diff-slot]');
       const row = rowsById.get(id);
-      if (diffSlot && row) diffSlot.innerHTML = renderDiffBlock(row, notes[id]?.note || "");
+      if (diffSlot && row) diffSlot.innerHTML = renderDiffBlock(row, notes[id]);
       if (!deferCommit) {
         saveNotes();
         updateDoneCount();
@@ -3446,6 +3510,24 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     }
 
     tbody.addEventListener("input", (event) => {
+      const revisionEditor = event.target.closest("[data-revision]");
+      if (revisionEditor) {
+        syncRevisionEditorHeight(revisionEditor);
+        const id = revisionEditor.dataset.revision;
+        const current = notes[id] || { note: "", done: false, manualDone: false, aiDone: false };
+        current.revisionText = revisionEditor.value;
+        current.revisionTarget = revisionTargetFor(current);
+        notes[id] = current;
+        if (!revisionEditor.value.trim()) selectedRevisionIds.delete(id);
+        const copyButton = revisionEditor.closest(".note-revision")?.querySelector(".copy-revision");
+        if (copyButton) copyButton.dataset.copyText = revisionEditor.value;
+        const row = rowsById.get(id);
+        const diffSlot = renderedRow(id)?.querySelector('[data-diff-slot]');
+        if (diffSlot && row) diffSlot.innerHTML = renderDiffBlock(row, current);
+        saveNotes();
+        updateDoneCount();
+        return;
+      }
       const cell = event.target.closest("[data-note]");
       if (cell) {
         syncNoteEditorHeight(cell);
@@ -3457,7 +3539,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
         const summary = cell.closest(".note-cell")?.querySelector(".note-summary");
         if (summary) {
           const wrapper = document.createElement("div");
-          wrapper.innerHTML = renderNoteSummary(current.note);
+          wrapper.innerHTML = renderNoteSummary(current, id);
           summary.replaceWith(wrapper.firstElementChild);
         }
         saveNotes();
@@ -3466,7 +3548,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     });
 
     tbody.addEventListener("blur", (event) => {
-      if (event.target.closest("[data-note]")) scheduleFilter();
+      if (event.target.closest("[data-note], [data-revision]")) scheduleFilter();
     }, true);
 
     tbody.addEventListener("change", (event) => {
@@ -3650,8 +3732,10 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       const targets = [];
       filteredRows.forEach((row, filteredIndex) => {
         const id = String(row.index);
-        const revision = parseAutomatedNote(notes[id]?.note || "")?.revision || "";
-        if (!bilingualMode && row.cn && revision) targets.push({ id, filteredIndex });
+        const item = notes[id];
+        const targetKey = revisionTargetFor(item);
+        const revision = revisionTextFor(item);
+        if (row[targetKey] && revision) targets.push({ id, filteredIndex });
       });
       return targets;
     }
@@ -3669,7 +3753,6 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
     }
 
     function focusAdjacentRevision(direction, currentCheckbox = null) {
-      if (document.documentElement.classList.contains("hide-revision-diff")) return false;
       const checkboxes = visibleRevisionCheckboxes();
       const currentIndex = currentCheckbox ? checkboxes.indexOf(currentCheckbox) : -1;
       if (currentIndex >= 0) {
@@ -3759,9 +3842,12 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
       for (const row of allRows) {
         const id = String(row.index);
         if (!selectedRevisionIds.has(id)) continue;
-        const revision = parseAutomatedNote(notes[id]?.note || "")?.revision || "";
-        if (!row.cn || !revision) continue;
-        entries.push({ id, searchText: row.cn, replaceText: revision });
+        const item = notes[id];
+        const revision = revisionTextFor(item).trim();
+        const targetKey = revisionTargetFor(item);
+        const searchText = String(row[targetKey] || "");
+        if (!searchText || !revision) continue;
+        entries.push({ id, targetKey, searchText, replaceText: revision });
       }
       return entries;
     }
@@ -4164,7 +4250,7 @@ function makeHtml(rows, selection, projectContext, pgaTemplate) {
           }
         }
         for (const result of pendingResults) {
-          writeNote(String(result.index), result.note || "", Boolean(result.done), { deferCommit: true });
+          writeNote(String(result.index), result.note || "", Boolean(result.done), { deferCommit: true }, result.targetKey || "");
         }
         if (pendingResults.length) {
           saveNotes();

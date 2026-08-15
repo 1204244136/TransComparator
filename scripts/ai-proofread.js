@@ -781,7 +781,7 @@ async function proofreadRow(row, allRows, config, labels) {
     if (!added.length) break;
   }
   decision = ensureRevisedText(decision, targetKey, targetText, counterpartText, config.proofreadMode);
-  return decisionToResult(row, decision, targetLabel, counterpartLabel);
+  return decisionToResult(row, decision, targetLabel, counterpartLabel, targetKey);
 }
 
 async function trackedCallModel(row, stage, stageLabel, messages, config) {
@@ -1247,12 +1247,13 @@ function summaryIntent(summary) {
   return "";
 }
 
-function decisionToResult(row, decision, targetLabel, counterpartLabel) {
+function decisionToResult(row, decision, targetLabel, counterpartLabel, targetKey = "") {
   if (decision.needsContext || decision.better === "unclear") {
     return {
       runId: status.runId,
       index: row.index,
       signature: rowSignature(row),
+      targetKey,
       status: "suggestion",
       done: false,
       note: [
@@ -1269,6 +1270,7 @@ function decisionToResult(row, decision, targetLabel, counterpartLabel) {
       runId: status.runId,
       index: row.index,
       signature: rowSignature(row),
+      targetKey,
       status: decision.semanticSame ? "same" : "target-better",
       done: true,
       note: [
@@ -1301,6 +1303,7 @@ function decisionToResult(row, decision, targetLabel, counterpartLabel) {
     runId: status.runId,
     index: row.index,
     signature: rowSignature(row),
+    targetKey,
     status: "suggestion",
     done: false,
     note: lines.join("\n"),
