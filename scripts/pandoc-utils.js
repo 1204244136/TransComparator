@@ -32,6 +32,10 @@ function formatForFile(file) {
   return pandocFormats[path.extname(file).toLowerCase()] || null;
 }
 
+function textLength(text) {
+  return Array.from(String(text || "").replace(/\s+/g, "")).length;
+}
+
 function readWithPandoc(file, options = {}) {
   const pandocBin = process.env.PANDOC_BIN || "pandoc";
   const from = options.from || formatForFile(file);
@@ -58,4 +62,5 @@ module.exports = {
   formatForFile,
   normalizeDocumentText,
   readWithPandoc,
+  textLength,
 };

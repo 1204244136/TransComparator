@@ -1,10 +1,10 @@
 const fs = require("fs");
 const { diffWordsWithSpace } = require("diff");
 const OpenCC = require("opencc-js");
+const { toCn } = require("./text-utils");
 const { classifyPrefilter } = require("./ai-prefilter");
 const { rowSignature, sameProjectSnapshot } = require("./project-context");
 const { resolveProjectArtifact } = require("./project-store");
-const toCn = OpenCC.Converter({ from: "tw", to: "cn" });
 const toTw = OpenCC.Converter({ from: "cn", to: "tw" });
 
 const providerDefaults = {
@@ -110,8 +110,6 @@ const proofreadPrompts = {
 function proofreadPromptFor(mode) {
   return mode === "bilingual" ? proofreadPrompts.bilingual : proofreadPrompts.trilingual;
 }
-
-const proofreadPrompt = proofreadPrompts.trilingual;
 
 const contextBudget = {
   maxRounds: 6,
@@ -1338,7 +1336,6 @@ module.exports = {
   normalizeSeverity,
   parseDecision,
   providerDefaults,
-  proofreadPrompt,
   proofreadPromptFor,
   proofreadPrompts,
   startPrefilter,

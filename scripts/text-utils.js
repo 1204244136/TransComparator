@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const OpenCC = require("opencc-js");
 const { readEpubText } = require("./epub-utils");
-const { formatForFile, readWithPandoc } = require("./pandoc-utils");
+const { formatForFile, readWithPandoc, textLength } = require("./pandoc-utils");
 const { resolveBuildOutputDir } = require("./storage-layout");
 
 const outputDir = resolveBuildOutputDir();
@@ -104,10 +104,6 @@ function sliceMain(text, startMarker, endMarker, options = {}) {
 
 function normalizeBlock(block) {
   return String(block || "").replace(/\s+/g, " ").trim();
-}
-
-function textLength(text) {
-  return Array.from(String(text || "").replace(/\s+/g, "")).length;
 }
 
 function blockRanges(text) {

@@ -3,7 +3,7 @@ const path = require("path");
 const JSZip = require("jszip");
 const { XMLParser } = require("fast-xml-parser");
 const { compile } = require("html-to-text");
-const { readWithPandoc } = require("./pandoc-utils");
+const { normalizeDocumentText: normalizeEpubText, readWithPandoc, textLength } = require("./pandoc-utils");
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -42,17 +42,6 @@ const htmlToTextWithInlineMarkup = compile({
 function asArray(value) {
   if (value == null) return [];
   return Array.isArray(value) ? value : [value];
-}
-
-function normalizeEpubText(text) {
-  return text
-    .replace(/^\uFEFF/, "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/\u00a0/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 function normalizeInlineMarkupOptions(options = {}) {
@@ -242,10 +231,6 @@ async function spineTextPreview(zip, itemPath, options = {}) {
 
 function countMatches(text, regex) {
   return (text.match(regex) || []).length;
-}
-
-function textLength(text) {
-  return Array.from(text.replace(/\s+/g, "")).length;
 }
 
 function isTextDense(block) {
